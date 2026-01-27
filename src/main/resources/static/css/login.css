@@ -1,53 +1,109 @@
-body {
-  font-family: Arial, sans-serif;
-  background-color: #00148f;
-  color: white;
+/* Iconos Google */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Fondo con imagen */
+.login-background {
+  background-image:
+    linear-gradient(rgba(248, 248, 245, 0.4) 0%, rgba(248, 248, 245, 0.8) 100%),
+    url("https://lh3.googleusercontent.com/aida-public/AB6AXuDZ53I44P1DMoCraaKXpPvSv9qDRWK7cAy_ut3u6d4agSvSbIDXvg1eVYRRx93ZVoV9Iu6-ilL5yH0baWEZqx3U_ExPWyDIBA_IItIKHIcONWdcetVgXpEw-SyUpXVoXK4GWAaoaA6bL5Va-jRoj2z2nWBVBg36slYTrmkZ-8X8Jz4TKYCOpVchjH--HEZTh15HxfEdqE1aVoeA99b65wn9SFrqTBjN2ws5aMlEVcLLPVyoKUxCxMPNt235PL17hETENRYo4NPXvQ");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.input-base {
+    width: 100% !important;
+    height: 3rem !important;
+    padding-left: 2.5rem !important;
+    padding-right: 2.5rem !important;
+    border-radius: 0.5rem !important;
+    background-color: rgba(255, 255, 255, 0.6) !important;
+    border: 1px solid rgba(156, 163, 175, 0.5) !important;
+    color: #1a1a1a !important;
+    font-size: 1rem !important;
+    outline: none !important;
+    box-sizing: border-box !important;
+}
+
+.input-base:focus {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  border-color: rgba(37, 99, 235, 0.6);
+}
+
+.password-toggle {
+  position: absolute;
+  right: 0.75rem;
+  /* espacio desde el borde */
+  top: 50%;
+  transform: translateY(-50%);
+  /* centra verticalmente */
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6b7280;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100vh;
 }
 
-.login-container {
-  background-color: #fff;
-  color: #00148f;
-  padding: 40px;
-  border-radius: 15px;
-  text-align: center;
-  width: 300px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.2);
+.password-toggle:hover {
+  color: #1a1a1a;
 }
 
-.logo {
-  width: 200px;
-  margin-bottom: 20px;
-}
 
-form input {
+/* --- Botón primario --- */
+.btn-primary {
+  display: flex;
+  min-width: 84px;
   width: 100%;
-  padding: 10px;
-  margin: 8px 0;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-}
-
-button {
-  background-color: #ffed00;
-  color: #00148f;
-  border: none;
-  padding: 10px 15px;
-  width: 100%;
-  border-radius: 5px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  /* rounded-lg */
+  height: 3rem;
+  /* h-12 */
+  padding: 0 1.25rem;
+  /* px-5 */
+  background-color: #2563eb;
+  /* primary */
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.015em;
   cursor: pointer;
-  font-weight: bold;
+  transition: transform .2s;
+  border: none;
+  box-shadow: 0 6px 18px rgba(10, 10, 10, 0.06);
 }
 
-button:hover {
-  background-color: #ffd700;
+.btn-primary:hover {
+  transform: scale(1.05);
 }
 
-#errorMsg {
-  color: red;
-  font-size: 0.9rem;
-  margin-top: 10px;
+.btn-primary:active {
+  transform: scale(1);
+}
+
+/* --- Botón mostrar/ocultar contraseña --- */
+.password-toggle {
+  position: absolute;
+  right: 0.875rem;
+  /* right-3.5 */
+  border: none;
+  background: transparent;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #6b7280;
+  /* text-text-muted */
+}
+
+.password-toggle:hover {
+  color: #1a1a1a;
+  /* text-text-main */
 }

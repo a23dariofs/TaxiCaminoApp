@@ -1,0 +1,14 @@
+:root {
+    --primary: #1773cf;
+    --background-light: #ffffff;
+}
+
+/* Configuración de Material Symbols */
+.material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Fuente principal */
+body {
+    font-family: 'Inter', sans-serif;
+}

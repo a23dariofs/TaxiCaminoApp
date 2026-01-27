@@ -61,4 +61,9 @@ public class RutaDiariaController {
     public List<RutaDiaria> buscarPorRepartidor(@PathVariable Long repartidorId) {
         return rutaService.buscarPorRepartidor(repartidorId);
     }
+
+    @GetMapping("/hoy")
+    public List<RutaDiaria> obtenerRutasDeHoy() {
+        return rutaService.buscarPorFecha(LocalDate.now());
+    }
 }

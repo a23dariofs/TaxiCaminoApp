@@ -1,25 +1,78 @@
 <!DOCTYPE html>
-<html lang="es">
+<html class="light" lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TaxiCamino - Login</title>
-    <link rel="stylesheet" href="../css/login.css">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Página de Inicio de Sesión</title>
+
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+
+    <!-- Iconos y fuentes -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+
+    <!-- CSS propio -->
+    <link rel="stylesheet" href="/css/login.css" />
+
+    <!-- Configuración Tailwind + script JS -->
+    <script src="/js/login.js" defer></script>
 </head>
-<body>
-<div class="login-container">
-    <img src="../img/logo.png" alt="TaxiCamino" class="logo">
+<body class="font-display">
+<div class="relative flex h-auto min-h-screen w-full flex-col bg-background-light dark:bg-background-dark overflow-x-hidden">
 
-    <h2>Iniciar sesión</h2>
+    <div class="flex-1">
+        <div class="relative flex h-full min-h-screen w-full flex-col items-center justify-center bg-cover bg-center bg-no-repeat p-4 login-background">
 
-    <form id="loginForm">
-        <input type="text" id="username" placeholder="Usuario" required>
-        <input type="password" id="password" placeholder="Contraseña" required>
-        <button type="submit">Entrar</button>
-        <p id="errorMsg"></p>
-    </form>
+            <div class="w-full max-w-md rounded-xl border border-black/10 bg-white/50 p-6 shadow-2xl backdrop-blur-lg sm:p-8">
+                <div class="flex flex-col items-center gap-6">
+
+                    <div class="text-center">
+                        <h1 class="text-text-main text-3xl font-bold tracking-tight">Inicio de Sesión</h1>
+                        <p class="text-text-muted mt-2 text-base">Bienvenido de nuevo a Taxicamino</p>
+                    </div>
+
+                    <form id="loginForm" class="w-full space-y-4">
+                        <!-- Usuario -->
+                        <label class="flex flex-col w-full">
+                            <p class="text-text-main text-sm font-medium pb-2">Usuario</p>
+                            <div class="relative flex w-full items-center">
+                                <span class="material-symbols-outlined absolute left-3.5 text-text-muted pointer-events-none">person</span>
+                                <input id="username" class="input-base" placeholder="Tu nombre de usuario o correo" />
+                            </div>
+                        </label>
+
+                        <!-- Contraseña -->
+                        <label class="flex flex-col w-full">
+                            <p class="text-text-main text-sm font-medium pb-2">Contraseña</p>
+                            <div class="relative flex w-full items-center">
+                                <span class="material-symbols-outlined absolute left-3.5 text-text-muted pointer-events-none">lock</span>
+                                <input id="passwordInput" class="input-base" type="password" placeholder="Tu contraseña" />
+
+                                <button class="password-toggle" id="togglePassword" type="button">
+                                    <span class="material-symbols-outlined">visibility</span>
+                                </button>
+                            </div>
+                        </label>
+
+                        <!-- Mensaje de error -->
+                        <p id="errorMsg" class="text-red-500 text-sm"></p>
+
+                        <button type="submit" class="btn-primary w-full">
+                            <span class="truncate">Acceder</span>
+                        </button>
+                    </form>
+
+                    <div class="text-center">
+                        <a class="text-sm text-text-muted hover:text-primary hover:underline" href="#">¿Olvidaste tu contraseña?</a>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+
 </div>
-
-<script src="../js/login.js"></script>
 </body>
 </html>

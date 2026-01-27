@@ -65,4 +65,5 @@ public class RutaDiariaService {
     public List<RutaDiaria> buscarPorRepartidor(Long repartidorId) {
         return rutaDiariaRepository.findByRepartidorId(repartidorId);
     }
+
 }
