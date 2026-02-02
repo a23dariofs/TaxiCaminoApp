@@ -1,98 +1,295 @@
-## Relaciones principales
+# 🚕 TaxiWay Sarria - Integración Frontend-Backend
 
-Cliente ↔ Presupuesto (1:N).
+## 📁 Estructura de Archivos
 
-Presupuesto ↔ PresupuestoDetalle ↔ Albergue (1:N, N:1).
+```
+tu-proyecto/
+├── frontend/
+│   ├── inicio.html          # HTML principal (tu archivo existente)
+│   ├── css/
+│   │   └── inicio.css       # Estilos personalizados
+│   └── js/
+│       └── inicio.js        # Lógica de conexión con el backend
+└── backend/
+    └── src/main/java/com/example/TaxiWaySarria/
+        └── Config/
+            └── CorsConfig.java   # Configuración CORS
+```
 
-Presupuesto ↔ Reserva (1:1).
+## 🚀 Instalación y Configuración
 
-Reserva ↔ Repartidor (N:M).
+### 1️⃣ Configurar el Backend (Spring Boot)
 
-Repartidor ↔ RutaDiaria (1:N).
+#### Paso 1: Agregar la configuración CORS
+Copia el archivo `CorsConfig.java` en tu proyecto Spring Boot:
+```
+src/main/java/com/example/TaxiWaySarria/Config/CorsConfig.java
+```
 
-RutaDiaria ↔ RutaDetalle ↔ Albergue (1:N, N:1).
+#### Paso 2: Verificar que tu aplicación esté corriendo
+```bash
+# Ejecutar Spring Boot
+./mvnw spring-boot:run
 
-Cliente ↔ Factura (1:N).
+# O si usas Maven
+mvn spring-boot:run
 
-Factura ↔ LineaFactura (1:N).
+# O si usas Gradle
+./gradlew bootRun
+```
+
+Tu backend debería estar disponible en: `http://localhost:8080`
+
+#### Paso 3: Verificar los endpoints
+Abre tu navegador y prueba:
+- `http://localhost:8080/api/rutas/hoy` - Debería devolver las rutas de hoy
+- `http://localhost:8080/api/repartidores` - Debería devolver los repartidores
+
+### 2️⃣ Configurar el Frontend
+
+#### Paso 1: Organizar los archivos
+Coloca los archivos en sus respectivas carpetas:
+- `inicio.html` → raíz o carpeta frontend
+- `inicio.css` → carpeta `/css/`
+- `inicio.js` → carpeta `/js/`
+
+#### Paso 2: Verificar las rutas en tu HTML
+Asegúrate de que tu `inicio.html` tenga estas líneas:
+```html
 
 
-## Arquitectura general (visión global)
+```
 
-### AuthController (login y register)
+#### Paso 3: Configurar la URL del API
+Si tu backend NO está en el puerto 8080, edita la línea 5 de `inicio.js`:
+```javascript
+const API_BASE_URL = 'http://localhost:TU_PUERTO/api';
+```
 
-register → es como dar de alta a un usuario en tu sistema.
+### 3️⃣ Ejecutar el Frontend
 
-Guardas el nombre, el rol y cifras la contraseña para que nadie pueda leerla en la base de datos.
+Tienes varias opciones:
 
-Ejemplo: si alguien mira la BD, verá algo como "$2a$10$abc123..." en vez de "12345".
+#### Opción A: Live Server (VS Code) - **RECOMENDADO**
+1. Instala la extensión "Live Server" en VS Code
+2. Click derecho en `inicio.html`
+3. Selecciona "Open with Live Server"
+4. Se abrirá automáticamente en `http://localhost:5500`
 
-login → es como “abrir la puerta con llave”.
+#### Opción B: Python HTTP Server
+```bash
+# En la carpeta del proyecto
+python -m http.server 8000
 
-Spring usa AuthenticationManager.authenticate(...) para comprobar si usuario + contraseña son correctos.
+# Abre en el navegador:
+# http://localhost:8000/inicio.html
+```
 
-Si son correctos → generas un token JWT. Ese token es como un pase que dice: “yo soy X y tengo permiso Y”.
+#### Opción C: Node.js HTTP Server
+```bash
+# Instalar http-server globalmente
+npm install -g http-server
 
-Si son incorrectos → te tira error y no pasa nadie.
+# Ejecutar en la carpeta del proyecto
+http-server -p 8000
 
-###  UsuarioDetailsServiceImpl
+# Abre en el navegador:
+# http://localhost:8000/inicio.html
+```
 
-Es quien dice a Spring cómo encontrar a un usuario en tu base de datos.
+## 📊 Funcionalidades Implementadas
 
-Devuelve un objeto UserDetails que tiene:
+### ✅ Lo que ya funciona:
+1. **Carga de rutas de hoy**: Al abrir la página, se cargan automáticamente las rutas del día
+2. **Visualización de rutas**: Muestra todas las rutas en la tabla con su información
+3. **Estadísticas**: Actualiza automáticamente el número de rutas totales, completadas y pendientes
+4. **Actualización de fecha**: Muestra la fecha actual en el header
+5. **Botones de acción**: Editar y Duplicar rutas (funcionalidad básica)
+6. **Notificaciones**: Sistema de notificaciones para éxito y errores
+7. **Estados visuales**: Loading, errores y tabla vacía
 
-Nombre de usuario
+### 🔨 Próximas funcionalidades a implementar:
+1. **Modal para crear ruta**: Crear nuevas rutas desde la interfaz
+2. **Edición completa**: Formulario de edición de rutas
+3. **Filtros avanzados**: Filtrar por fecha, repartidor, estado
+4. **Asignación de repartidores**: Asignar/cambiar repartidores desde la UI
+5. **Detalles de ruta**: Ver y editar los detalles (paradas) de cada ruta
+6. **Paginación funcional**: Navegación entre páginas de resultados
 
-Contraseña cifrada
+## 🔧 Personalización
 
-Roles (permisos) → por ejemplo "ROLE_ADMIN" o "ROLE_REPARTIDOR"
+### Cambiar el puerto del backend
+En `inicio.js`, línea 5:
+```javascript
+const API_BASE_URL = 'http://localhost:8080/api'; // Cambia 8080 por tu puerto
+```
 
-Piensa que es como la tarjeta de identidad del usuario que Spring usa para verificar permisos.
+### Modificar colores del tema
+En `inicio.css`, líneas 5-9:
+```css
+:root {
+    --primary: #1773cf;        /* Color principal */
+    --primary-dark: #125aa8;   /* Color principal oscuro */
+    --primary-light: #e0f2fe;  /* Color principal claro */
+}
+```
 
-### JwtUtil (el generador de pases)
+### Adaptar el modelo de datos
+Si tu modelo de `RutaDiaria` tiene campos diferentes, modifica la función `renderizarRutas()` en `inicio.js` (línea 207):
+```javascript
+// Ejemplo: si tu campo se llama "horaInicio" en lugar de "fecha"
+const hora = extraerHora(ruta.horaInicio);
 
-generateToken(username, role) → crea un pase (token) con:
+// Ejemplo: si tu campo se llama "puntoInicio" en lugar de "origen"
+const origen = ruta.puntoInicio || 'Origen no especificado';
+```
 
-Quién es (username)
+## 🐛 Solución de Problemas
 
-Qué puede hacer (role)
+### Problema: "Failed to fetch" o error CORS
 
-Fecha de creación y expiración
+**Solución 1**: Verifica que el backend esté corriendo
+```bash
+# Comprueba que Spring Boot esté activo
+curl http://localhost:8080/api/rutas/hoy
+```
 
-Firma digital para que nadie pueda falsificarlo
+**Solución 2**: Verifica que hayas agregado `CorsConfig.java`
+- El archivo debe estar en `src/main/java/com/example/TaxiWaySarria/Config/`
+- Reinicia tu aplicación Spring Boot después de agregarlo
 
-validateToken(token) → comprueba si el pase es válido y no está caducado.
+**Solución 3**: Verifica la consola del navegador
+- Presiona F12
+- Ve a la pestaña "Console"
+- Lee el mensaje de error completo
 
-getUsernameFromToken / getRoleFromToken → extrae la info del pase.
+### Problema: "La tabla está vacía"
 
-💡 Analogía: JWT = pase de metro digital con tu nombre y privilegios escritos y sellado por seguridad.
+**Causa posible**: No hay datos en la base de datos
 
-### JwtFilter (el guardia en la puerta)
+**Solución**: Agrega datos de prueba
+```sql
+-- Ejemplo de inserción en la base de datos
+INSERT INTO ruta_diaria (fecha, nombre, descripcion) 
+VALUES (CURRENT_DATE, 'Ruta Norte', 'Ruta de prueba');
+```
 
-Antes de dejar entrar cualquier petición a tu API:
+### Problema: "Los datos no se muestran correctamente"
 
-Mira si viene un token en el header Authorization.
+**Causa posible**: Tu modelo de datos es diferente
 
-Comprueba que el token es válido (jwtUtil.validateToken).
+**Solución**: Abre la consola del navegador (F12) y verifica el formato de los datos:
+```javascript
+// Los datos deberían verse así:
+console.log(rutas);
+// [{id: 1, fecha: "2026-01-27", nombre: "Ruta 1", ...}, ...]
+```
 
-Si todo bien → dice a Spring: “este usuario es X y tiene permisos Y”.
+Si tus campos son diferentes, adapta el código en `renderizarRutas()`.
 
-Luego deja pasar la petición al controlador correspondiente.
+### Problema: "Las notificaciones no aparecen"
 
-💡 Analogía: es como un guardia que mira tu pase antes de dejarte entrar al edificio.
+**Solución**: Asegúrate de que `inicio.css` esté cargado correctamente
+- Verifica la ruta en el HTML: `<link rel="stylesheet" href="/css/inicio.css">`
+- Comprueba que el archivo exista en la carpeta `/css/`
 
-### SecurityConfig (reglas de seguridad)
+## 📝 Estructura del Modelo de Datos
 
-csrf disabled → APIs sin sesión normalmente no necesitan protección CSRF.
+El código espera que tu modelo `RutaDiaria` tenga al menos estos campos:
 
-/api/auth/ → acceso libre (para login y register)
+```java
+public class RutaDiaria {
+    private Long id;
+    private LocalDate fecha;
+    private String nombre;
+    private String descripcion;
+    private Repartidor repartidor;
+    
+    // Campos opcionales que el frontend puede usar:
+    private String origen;
+    private String destino;
+    private String cliente;
+    private Double precio;
+    private String estado; // "PENDIENTE", "EN_CURSO", "COMPLETADA", "CANCELADA"
+    private Boolean completada;
+    private Boolean cancelada;
+    private Boolean enCurso;
+    
+    // getters y setters...
+}
+```
 
-cualquier otra ruta → requiere token válido
+## 🎯 Ejemplos de Uso
 
-sessionManagement(STATELESS) → el servidor no guarda sesiones, todo se valida con el token en cada petición
+### Cargar rutas manualmente
+```javascript
+// En la consola del navegador (F12)
+await cargarRutasDeHoy();
+```
 
-Añade JwtFilter → para que el guardia revise el token antes de todo
+### Crear una ruta desde la consola
+```javascript
+const nuevaRuta = {
+    fecha: "2026-01-27T10:00:00",
+    nombre: "Ruta de prueba",
+    descripcion: "Esta es una ruta de prueba",
+    origen: "Aeropuerto",
+    destino: "Centro",
+    precio: 25.50
+};
 
-Declara PasswordEncoder → para cifrar y comparar contraseñas
+await RutaDiariaService.crear(nuevaRuta);
+await cargarRutasDeHoy(); // Recargar la tabla
+```
 
-Declara AuthenticationManager → el “juez” que decide si la contraseña es correc
+### Asignar repartidor a una ruta
+```javascript
+// rutaId = 1, repartidorId = 5
+await RutaDiariaService.asignarRepartidor(1, 5);
+await cargarRutasDeHoy(); // Recargar la tabla
+```
+
+## 📞 Soporte y Ayuda
+
+Si tienes problemas:
+
+1. **Verifica la consola del navegador** (F12 → Console)
+2. **Verifica los logs de Spring Boot** en tu terminal
+3. **Comprueba que los endpoints funcionen** con Postman o curl
+4. **Revisa que CORS esté configurado** correctamente
+
+### Endpoints disponibles:
+- `GET /api/rutas` - Listar todas las rutas
+- `GET /api/rutas/hoy` - Rutas de hoy
+- `GET /api/rutas/{id}` - Buscar por ID
+- `POST /api/rutas` - Crear ruta
+- `PUT /api/rutas/{id}` - Actualizar ruta
+- `DELETE /api/rutas/{id}` - Eliminar ruta
+- `POST /api/rutas/{rutaId}/asignar-repartidor/{repartidorId}` - Asignar repartidor
+- `GET /api/rutas/fecha/{fecha}` - Buscar por fecha
+- `GET /api/rutas/repartidor/{repartidorId}` - Buscar por repartidor
+
+## 🔐 Notas de Seguridad
+
+⚠️ **IMPORTANTE**: La configuración actual de CORS permite peticiones desde cualquier origen (`*`).
+
+Para **producción**, cambia esto en `CorsConfig.java`:
+```java
+.allowedOrigins(
+    "https://tu-dominio.com",  // Solo tu dominio
+    "https://www.tu-dominio.com"
+)
+.allowCredentials(true)  // Si usas autenticación
+```
+
+## 📚 Recursos Adicionales
+
+- [Spring Boot CORS Documentation](https://spring.io/guides/gs/rest-service-cors/)
+- [Fetch API Documentation](https://developer.mozilla.org/es/docs/Web/API/Fetch_API)
+- [Tailwind CSS Documentation](https://tailwindcss.com/docs)
+
+---
+
+**Versión**: 1.0  
+**Fecha**: Enero 2026  
+**Autor**: Integración Frontend-Backend TaxiWay Sarria

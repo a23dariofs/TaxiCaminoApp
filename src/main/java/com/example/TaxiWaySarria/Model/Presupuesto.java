@@ -15,6 +15,11 @@ public class Presupuesto {
     private Double precioTotal;
     private String estado; // PENDIENTE, ENVIADO, ACEPTADO, RECHAZADO
     private LocalDate fechaCreacion;
+    private LocalDate fechaViaje;
+    private String origen;
+    private String destino;
+    private Integer kilometrosEstimados;
+    private String observaciones;
 
     @ManyToOne
     @JoinColumn(name = "cliente_id")
@@ -25,18 +30,28 @@ public class Presupuesto {
     @OneToMany(mappedBy = "presupuesto", cascade = CascadeType.ALL)
     private List<PresupuestoDetalle> detalles;
 
+    // Constructores
     public Presupuesto() {
     }
 
-    public Presupuesto(Double precioTotal, String estado, LocalDate fechaCreacion, Cliente cliente, List<PresupuestoDetalle> detalles, String tokenAceptacion) {
+    public Presupuesto(Double precioTotal, String estado, LocalDate fechaCreacion,
+                       LocalDate fechaViaje, String origen, String destino,
+                       Integer kilometrosEstimados, String observaciones,
+                       Cliente cliente, String tokenAceptacion, List<PresupuestoDetalle> detalles) {
         this.precioTotal = precioTotal;
         this.estado = estado;
         this.fechaCreacion = fechaCreacion;
+        this.fechaViaje = fechaViaje;
+        this.origen = origen;
+        this.destino = destino;
+        this.kilometrosEstimados = kilometrosEstimados;
+        this.observaciones = observaciones;
         this.cliente = cliente;
-        this.detalles = detalles;
         this.tokenAceptacion = tokenAceptacion;
+        this.detalles = detalles;
     }
 
+    // Getters y Setters
     public Long getId() {
         return id;
     }
@@ -69,6 +84,46 @@ public class Presupuesto {
         this.fechaCreacion = fechaCreacion;
     }
 
+    public LocalDate getFechaViaje() {
+        return fechaViaje;
+    }
+
+    public void setFechaViaje(LocalDate fechaViaje) {
+        this.fechaViaje = fechaViaje;
+    }
+
+    public String getOrigen() {
+        return origen;
+    }
+
+    public void setOrigen(String origen) {
+        this.origen = origen;
+    }
+
+    public String getDestino() {
+        return destino;
+    }
+
+    public void setDestino(String destino) {
+        this.destino = destino;
+    }
+
+    public Integer getKilometrosEstimados() {
+        return kilometrosEstimados;
+    }
+
+    public void setKilometrosEstimados(Integer kilometrosEstimados) {
+        this.kilometrosEstimados = kilometrosEstimados;
+    }
+
+    public String getObservaciones() {
+        return observaciones;
+    }
+
+    public void setObservaciones(String observaciones) {
+        this.observaciones = observaciones;
+    }
+
     public Cliente getCliente() {
         return cliente;
     }
@@ -77,16 +132,16 @@ public class Presupuesto {
         this.cliente = cliente;
     }
 
-    public List<PresupuestoDetalle> getDetalles() {
-        return detalles;
-    }
-
     public String getTokenAceptacion() {
         return tokenAceptacion;
     }
 
     public void setTokenAceptacion(String tokenAceptacion) {
         this.tokenAceptacion = tokenAceptacion;
+    }
+
+    public List<PresupuestoDetalle> getDetalles() {
+        return detalles;
     }
 
     public void setDetalles(List<PresupuestoDetalle> detalles) {
@@ -100,8 +155,13 @@ public class Presupuesto {
                 ", precioTotal=" + precioTotal +
                 ", estado='" + estado + '\'' +
                 ", fechaCreacion=" + fechaCreacion +
+                ", fechaViaje=" + fechaViaje +
+                ", origen='" + origen + '\'' +
+                ", destino='" + destino + '\'' +
+                ", kilometrosEstimados=" + kilometrosEstimados +
+                ", observaciones='" + observaciones + '\'' +
                 ", cliente=" + cliente +
-                ", detalles=" + detalles +
+                ", tokenAceptacion='" + tokenAceptacion + '\'' +
                 '}';
     }
 }

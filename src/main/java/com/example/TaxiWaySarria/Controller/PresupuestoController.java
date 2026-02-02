@@ -62,4 +62,14 @@ public class PresupuestoController {
             return ResponseEntity.status(404).body("Token inválido ");
         }
     }
+
+    @PostMapping("/{id}/enviar")
+    public ResponseEntity<String> enviarPresupuesto(@PathVariable Long id) {
+        try {
+            presupuestoService.enviarPorEmail(id);
+            return ResponseEntity.ok("Presupuesto enviado correctamente");
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Error al enviar: " + e.getMessage());
+        }
+    }
 }

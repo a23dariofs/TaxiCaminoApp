@@ -19,15 +19,31 @@ tailwind.config = {
 
 // Esperar a que cargue el DOM
 document.addEventListener("DOMContentLoaded", () => {
+    // Verificar si ya está autenticado
+    if (AuthService.isAuthenticated()) {
+        console.log('Ya está autenticado, redirigiendo...');
+        window.location.href = "clientes.html"; // o tu página principal
+        return;
+    }
+
     // Toggle mostrar/ocultar contraseña
     const passwordInput = document.getElementById("passwordInput");
     const togglePassword = document.getElementById("togglePassword");
 
-    togglePassword.addEventListener("click", () => {
-        passwordInput.type = passwordInput.type === "password" ? "text" : "password";
-    });
+    if (togglePassword && passwordInput) {
+        togglePassword.addEventListener("click", () => {
+            const isPassword = passwordInput.type === "password";
+            passwordInput.type = isPassword ? "text" : "password";
 
-    // Login con fetch
+            // Cambiar el icono
+            const icon = togglePassword.querySelector('.material-symbols-outlined');
+            if (icon) {
+                icon.textContent = isPassword ? "visibility_off" : "visibility";
+            }
+        });
+    }
+
+    // Login con AuthService
     const loginForm = document.getElementById("loginForm");
     if (loginForm) {
         loginForm.addEventListener("submit", async (e) => {
@@ -36,42 +52,131 @@ document.addEventListener("DOMContentLoaded", () => {
             const username = document.getElementById("username").value.trim();
             const password = document.getElementById("passwordInput").value.trim();
             const errorMsg = document.getElementById("errorMsg");
+            const submitButton = loginForm.querySelector('button[type="submit"]');
 
-            errorMsg.textContent = ""; // Limpiar mensaje previo
+            // Limpiar mensaje previo
+            errorMsg.textContent = "";
+            errorMsg.classList.remove('show-error');
 
+            // Validar campos
             if (!username || !password) {
-                errorMsg.textContent = "Introduce usuario y contraseña.";
+                mostrarError(errorMsg, "Introduce usuario y contraseña.");
                 return;
             }
 
+            // Deshabilitar botón durante el login
+            const textoOriginal = submitButton.innerHTML;
+            submitButton.disabled = true;
+            submitButton.innerHTML = `
+                <svg class="animate-spin h-5 w-5 text-white mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            `;
+
             try {
-                const response = await fetch("http://localhost:8080/api/auth/login", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ username, password }),
-                });
+                // Usar AuthService para login
+                const remember = true; // Siempre recordar sesión (puedes agregar un checkbox)
+                await AuthService.login(username, password, remember);
 
-                if (response.ok) {
-                    const data = await response.json();
+                // Login exitoso
+                console.log('✅ Login exitoso');
 
-                    if (!data.token) {
-                        errorMsg.textContent = "Error: No se recibió token del servidor.";
-                        return;
-                    }
+                // Mostrar mensaje de éxito (opcional)
+                submitButton.innerHTML = '<span class="material-symbols-outlined">check_circle</span> ¡Éxito!';
+                submitButton.style.backgroundColor = '#10b981'; // Verde
 
-                    localStorage.setItem("token", data.token); // Guardar JWT
-                    console.log("Token recibido:", data.token);
-                    window.location.href = "inicio.html"; // Redirigir
-                } else if (response.status === 401) {
-                    errorMsg.textContent = "Usuario o contraseña incorrectos.";
-                } else {
-                    const errorData = await response.json().catch(() => ({}));
-                    errorMsg.textContent = errorData.message || "Error desconocido en el login.";
-                }
+                // Redirigir después de 1 segundo
+                setTimeout(() => {
+                    window.location.href = "clientes.html"; // o tu página principal
+                }, 1000);
+
             } catch (error) {
-                console.error("Error al conectar con el backend:", error);
-                errorMsg.textContent = "No se pudo conectar con el servidor.";
+                console.error("❌ Error en login:", error);
+
+                // Mostrar error al usuario
+                let mensajeError = "Error desconocido. Intenta de nuevo.";
+
+                if (error.message.includes("Usuario o contraseña incorrectos")) {
+                    mensajeError = "Usuario o contraseña incorrectos.";
+                } else if (error.message.includes("Error al iniciar sesión")) {
+                    mensajeError = "Error al iniciar sesión. Verifica tus datos.";
+                } else if (error.message.includes("fetch")) {
+                    mensajeError = "No se pudo conectar con el servidor. Verifica tu conexión.";
+                } else {
+                    mensajeError = error.message;
+                }
+
+                mostrarError(errorMsg, mensajeError);
+
+                // Rehabilitar botón
+                submitButton.disabled = false;
+                submitButton.innerHTML = textoOriginal;
+
+                // Sacudir el formulario para indicar error
+                loginForm.classList.add('shake');
+                setTimeout(() => loginForm.classList.remove('shake'), 500);
             }
         });
     }
 });
+
+/**
+ * Mostrar mensaje de error con animación
+ */
+function mostrarError(errorElement, mensaje) {
+    if (!errorElement) return;
+
+    errorElement.textContent = mensaje;
+    errorElement.classList.add('show-error');
+
+    // Animar el mensaje
+    errorElement.style.animation = 'slideDown 0.3s ease-out';
+}
+
+// Agregar estilos para animaciones
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+        20%, 40%, 60%, 80% { transform: translateX(5px); }
+    }
+
+    .shake {
+        animation: shake 0.5s;
+    }
+
+    .show-error {
+        display: block;
+        margin-top: 0.5rem;
+        padding: 0.75rem;
+        background-color: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        border-radius: 0.5rem;
+        color: #dc2626;
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+
+    /* Animación del spinner */
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .animate-spin {
+        animation: spin 1s linear infinite;
+    }
+`;
+document.head.appendChild(style);
