@@ -13,13 +13,18 @@ tailwind.config = {
 // ─── BASE URLs de los controllers ───────────────────────────────────────────
 const API = {
     presupuestos: '/api/presupuestos',
-    detalles:     '/api/presupuestos-detalles',
     clientes:     '/api/clientes',
     albergues:    '/api/albergues'
 };
 
 // ─── Helper: usa AuthService para mandar el token automáticamente ───────────
 async function apiCall(url, options = {}) {
+    if (options.body && !options.headers) {
+        options.headers = { 'Content-Type': 'application/json' };
+    } else if (options.body && options.headers && !options.headers['Content-Type']) {
+        options.headers['Content-Type'] = 'application/json';
+    }
+
     const res = await AuthService.authenticatedFetch(url, options);
 
     if (!res.ok) {
@@ -32,25 +37,75 @@ async function apiCall(url, options = {}) {
 
 // ─── Estado local ────────────────────────────────────────────────────────────
 let presupuestosCache = [];
-let modalClientes = [];
-let modalAlbergues = [];
+let clientesCache = [];
+let alberguesCache = [];
 
 // ─── Paginación ──────────────────────────────────────────────────────────────
-const ITEMS_POR_PAGINA = 4;
+const ITEMS_POR_PAGINA = 5;
 let paginaActual = 1;
 
 // ─── Colores inline para estados ─────────────────────────────────────────────
 const ESTADO_STYLES = {
-    'Pendiente':  { bg: '#fef3c7', text: '#92400e', border: '#fcd34d' },
-    'Enviado':    { bg: '#dbeafe', text: '#1e40af', border: '#93c5fd' },
-    'Aceptado':   { bg: '#dcfce7', text: '#166534', border: '#86efac' },
-    'Rechazado':  { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5' },
-    'Caducado':   { bg: '#f3f4f6', text: '#4b5563', border: '#d1d5db' },
+    'ACEPTADO':  { bg: '#dcfce7', text: '#166534', border: '#86efac' },
+    'PENDIENTE': { bg: '#fed7aa', text: '#c2410c', border: '#fdba74' },
+    'RECHAZADO': { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5' },
+    'EXPIRADO':  { bg: '#f3f4f6', text: '#6b7280', border: '#d1d5db' },
 };
 
 function getEstadoStyle(estado) {
-    const s = ESTADO_STYLES[estado] || ESTADO_STYLES['Pendiente'];
+    const s = ESTADO_STYLES[estado] || ESTADO_STYLES['PENDIENTE'];
     return `background-color:${s.bg};color:${s.text};border-color:${s.border};`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONFIGURACIÓN DE LOGOUT
+// ═══════════════════════════════════════════════════════════════════════════
+function configurarLogout() {
+    // Buscar el botón de usuario en el header
+    const userButton = document.querySelector('header button[class*="rounded-full"]');
+    if (userButton) {
+        // Convertir el botón en un dropdown con opción de logout
+        userButton.addEventListener('click', () => {
+            mostrarMenuUsuario();
+        });
+    }
+}
+
+function mostrarMenuUsuario() {
+    // Eliminar menú existente si hay uno
+    const menuExistente = document.getElementById('userMenu');
+    if (menuExistente) {
+        menuExistente.remove();
+        return;
+    }
+
+    const userInfo = AuthService.getUserInfo();
+
+    const menu = document.createElement('div');
+    menu.id = 'userMenu';
+    menu.className = 'absolute top-16 right-10 bg-white rounded-lg shadow-xl border border-gray-100 py-2 z-50 min-w-[200px]';
+    menu.innerHTML = `
+        <div class="px-4 py-2 border-b border-gray-100">
+            <p class="text-sm font-semibold text-gray-900">${userInfo?.username || 'Usuario'}</p>
+            <p class="text-xs text-gray-500">${userInfo?.role || 'USER'}</p>
+        </div>
+        <button onclick="AuthService.logout()" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2">
+            <span class="material-symbols-outlined text-lg">logout</span>
+            <span>Cerrar sesión</span>
+        </button>
+    `;
+
+    document.body.appendChild(menu);
+
+    // Cerrar al hacer clic fuera
+    setTimeout(() => {
+        document.addEventListener('click', function cerrarMenu(e) {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', cerrarMenu);
+            }
+        });
+    }, 100);
 }
 
 // ─── Cargar presupuestos desde el backend ────────────────────────────────────
@@ -68,7 +123,7 @@ async function cargarPresupuestos() {
 
 // ─── Renderizar tabla según página actual ───────────────────────────────────
 function renderTabla() {
-    const tbody = document.querySelector('table tbody');
+    const tbody = document.getElementById('budgetsTableBody');
     if (!tbody) return;
 
     const inicio = (paginaActual - 1) * ITEMS_POR_PAGINA;
@@ -76,11 +131,11 @@ function renderTabla() {
 
     tbody.innerHTML = '';
 
-    if (pagina.length === 0) {
+    if (presupuestosCache.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="8" style="padding:40px 24px;text-align:center;font-size:14px;color:#9ca3af;">
-                    No hay presupuestos que mostrar.
+                <td colspan="7" style="padding:40px 24px;text-align:center;font-size:14px;color:#9ca3af;">
+                    No hay presupuestos registrados.
                 </td>
             </tr>`;
         return;
@@ -91,50 +146,65 @@ function renderTabla() {
         tr.className = 'hover:bg-gray-50/50 transition-colors';
         tr.dataset.presupuestoId = p.id;
 
-        const estadoStyle = getEstadoStyle(p.estado);
+        const estado = p.estado || 'PENDIENTE';
+        const estadoStyle = getEstadoStyle(estado);
+        const estadoTexto = estado === 'ACEPTADO' ? 'Aceptado' : estado === 'RECHAZADO' ? 'Rechazado' : estado === 'EXPIRADO' ? 'Expirado' : 'Pendiente';
 
-        let botones = `
-            <button aria-label="Editar" data-id="${p.id}"
-                class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">
-                <span class="material-symbols-outlined text-base">edit</span>
-            </button>
-            <button aria-label="Eliminar" data-id="${p.id}"
-                class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors">
-                <span class="material-symbols-outlined text-base">delete</span>
-            </button>`;
+        const fechaEmision = p.fechaEmision ? formatFecha(p.fechaEmision) : '-';
+        const fechaValidez = p.fechaValidez ? formatFecha(p.fechaValidez) : '-';
+        const importe = p.importeTotal != null ? `€${p.importeTotal.toFixed(2)}` : '€0.00';
 
-        if (p.estado !== 'Aceptado' && p.estado !== 'Rechazado' && p.estado !== 'Caducado') {
-            botones += `
-            <button aria-label="Enviar presupuesto" data-id="${p.id}"
-                class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">
-                <span class="material-symbols-outlined text-base">mail</span>
-            </button>`;
+        let botonesAccion = '';
+
+        if (estado === 'PENDIENTE') {
+            botonesAccion = `
+                <div class="flex items-center gap-2">
+                    <button aria-label="Enviar email" data-id="${p.id}"
+                        class="send-btn flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-colors border border-blue-200">
+                        <span class="material-symbols-outlined text-sm">send</span> Enviar
+                    </button>
+                    <button aria-label="Editar" data-id="${p.id}"
+                        class="edit-btn flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">
+                        <span class="material-symbols-outlined text-base">edit</span>
+                    </button>
+                    <button aria-label="Eliminar" data-id="${p.id}"
+                        class="delete-btn flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors">
+                        <span class="material-symbols-outlined text-base">delete</span>
+                    </button>
+                </div>`;
+        } else if (estado === 'ACEPTADO') {
+            botonesAccion = `
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-green-600 font-semibold italic flex items-center gap-1">
+                        <span class="material-symbols-outlined text-sm">check_circle</span> Aceptado
+                    </span>
+                    <button aria-label="Eliminar" data-id="${p.id}"
+                        class="delete-btn flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors">
+                        <span class="material-symbols-outlined text-base">delete</span>
+                    </button>
+                </div>`;
+        } else {
+            botonesAccion = `
+                <div class="flex items-center gap-2">
+                    <button aria-label="Eliminar" data-id="${p.id}"
+                        class="delete-btn flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors">
+                        <span class="material-symbols-outlined text-base">delete</span>
+                    </button>
+                </div>`;
         }
 
-        if (p.estado === 'Enviado' || p.estado === 'Aceptado') {
-            botones += `
-            <button aria-label="Convertir en Reserva" data-id="${p.id}"
-                class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">
-                <span class="material-symbols-outlined text-base">bookmark_add</span>
-            </button>`;
-        }
-
-        // Columnas: Cliente | Fecha Viaje | Origen y Destino | KM Est. | Precio | Fecha Creación | Estado | Acciones
         tr.innerHTML = `
-            <td class="px-6 py-5 whitespace-nowrap text-sm font-medium text-gray-900">${p.cliente?.nombre || '—'}</td>
-            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${formatFecha(p.fechaViaje)}</td>
-            <td class="px-6 py-5 text-sm text-gray-600">${p.origen || '—'} - ${p.destino || '—'}</td>
-            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${p.kilometrosEstimados ? p.kilometrosEstimados + ' km' : '—'}</td>
-            <td class="px-6 py-5 text-right whitespace-nowrap text-sm font-bold text-gray-900">${formatPrecio(p.precioTotal)}</td>
-            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${formatFecha(p.fechaCreacion)}</td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm font-medium text-gray-900">#${p.id || '—'}</td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${p.cliente?.nombre || '—'}</td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${fechaEmision}</td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${fechaValidez}</td>
+            <td class="px-6 py-5 text-right whitespace-nowrap text-sm font-bold text-gray-900">${importe}</td>
             <td class="px-6 py-5 whitespace-nowrap">
                 <span style="display:inline-flex;align-items:center;padding:4px 10px;border-radius:9999px;font-size:12px;font-weight:600;border:1px solid;${estadoStyle}">
-                    ${p.estado}
+                    ${estadoTexto}
                 </span>
             </td>
-            <td class="px-6 py-5 whitespace-nowrap">
-                <div class="flex items-center gap-2">${botones}</div>
-            </td>`;
+            <td class="px-6 py-5 whitespace-nowrap">${botonesAccion}</td>`;
 
         tbody.appendChild(tr);
     });
@@ -142,80 +212,12 @@ function renderTabla() {
     adjuntarEventosTabla();
 }
 
-// ─── Paginación dinámica ─────────────────────────────────────────────────────
-function renderPaginacion() {
-    const contenedor = document.querySelector('.flex.items-center.gap-1');
-    if (!contenedor) return;
-
-    const totalPaginas = Math.ceil(presupuestosCache.length / ITEMS_POR_PAGINA);
-
-    if (totalPaginas <= 1) {
-        contenedor.style.display = 'none';
-        return;
-    }
-    contenedor.style.display = 'flex';
-    contenedor.innerHTML = '';
-
-    contenedor.insertAdjacentHTML('beforeend', `
-        <button class="flex items-center justify-center h-8 w-8 rounded text-gray-400 hover:bg-gray-50 transition-colors" data-nav="prev">
-            <span class="material-symbols-outlined text-xl">chevron_left</span>
-        </button>`);
-
-    getPaginasVisibles(paginaActual, totalPaginas).forEach(p => {
-        if (p === '...') {
-            contenedor.insertAdjacentHTML('beforeend',
-                `<span class="flex items-center justify-center h-8 w-8 text-gray-600">...</span>`);
-        } else {
-            const activo = p === paginaActual;
-            contenedor.insertAdjacentHTML('beforeend', `
-                <button class="flex items-center justify-center h-8 w-8 rounded text-sm transition-colors font-medium text-gray-600 hover:bg-gray-50"
-                    style="${activo ? 'background-color:#1773cf;color:#fff;font-weight:700;' : ''}"
-                    data-page="${p}">${p}</button>`);
-        }
-    });
-
-    contenedor.insertAdjacentHTML('beforeend', `
-        <button class="flex items-center justify-center h-8 w-8 rounded text-gray-400 hover:bg-gray-50 transition-colors" data-nav="next">
-            <span class="material-symbols-outlined text-xl">chevron_right</span>
-        </button>`);
-
-    contenedor.querySelectorAll('[data-page]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            paginaActual = parseInt(btn.dataset.page);
-            renderTabla();
-            renderPaginacion();
-        });
-    });
-    contenedor.querySelector('[data-nav="prev"]').addEventListener('click', () => {
-        if (paginaActual > 1) { paginaActual--; renderTabla(); renderPaginacion(); }
-    });
-    contenedor.querySelector('[data-nav="next"]').addEventListener('click', () => {
-        if (paginaActual < totalPaginas) { paginaActual++; renderTabla(); renderPaginacion(); }
-    });
-}
-
-function getPaginasVisibles(actual, total) {
-    if (total <= 5) return Array.from({ length: total }, (_, i) => i + 1);
-    const paginas = [1];
-    if (actual > 3) paginas.push('...');
-    for (let i = Math.max(2, actual - 1); i <= Math.min(total - 1, actual + 1); i++) paginas.push(i);
-    if (actual < total - 2) paginas.push('...');
-    paginas.push(total);
-    return paginas;
-}
-
 // ─── Formateo fecha → "22/08/2024" ──────────────────────────────────────────
 function formatFecha(isoDate) {
     if (!isoDate) return '—';
-    const d   = new Date(isoDate);
+    const d = new Date(isoDate);
     const pad = n => String(n).padStart(2, '0');
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
-}
-
-// ─── Formateo precio → "€45.00" ─────────────────────────────────────────────
-function formatPrecio(precio) {
-    if (precio == null) return '—';
-    return '€' + precio.toFixed(2);
 }
 
 // ─── Toast ───────────────────────────────────────────────────────────────────
@@ -251,258 +253,95 @@ function mostrarToast(msg, tipo = 'error') {
     setTimeout(() => {
         toast.style.animation = 'toastOut 0.3s ease forwards';
         setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, 4000);
 }
 
-// ─── Modal crear / editar presupuesto ────────────────────────────────────────
-function crearModal(modo, presupuestoEditar = null) {
-    document.querySelector('.modal-overlay')?.remove();
+// ─── Renderizar paginación ──────────────────────────────────────────────────
+function renderPaginacion() {
+    const totalPaginas = Math.ceil(presupuestosCache.length / ITEMS_POR_PAGINA);
+    const container = document.querySelector('.pagination-container');
 
-    const estadoOpciones = ['Pendiente', 'Enviado', 'Aceptado', 'Rechazado', 'Caducado']
-        .map(e => {
-            let selected = '';
-            if (modo === 'editar' && presupuestoEditar?.estado === e) selected = 'selected';
-            if (modo === 'crear' && e === 'Pendiente') selected = 'selected';
-            return `<option value="${e}" ${selected}>${e}</option>`;
-        })
-        .join('');
-
-    const clienteOpciones = modalClientes
-        .map(c => {
-            const selected = presupuestoEditar?.cliente?.id === c.id ? 'selected' : '';
-            return `<option value="${c.id}" ${selected}>${c.nombre}</option>`;
-        })
-        .join('');
-
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:50;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease forwards;';
-
-    overlay.innerHTML = `
-        <div style="background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.15);width:100%;max-width:520px;margin:0 16px;overflow:hidden;animation:modalIn 0.25s ease forwards;">
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #f3f4f6;">
-                <h3 style="font-size:18px;font-weight:700;color:#111827;">${modo === 'crear' ? 'Nuevo Presupuesto' : 'Editar Presupuesto'}</h3>
-                <button class="modal-close" style="display:flex;height:32px;width:32px;align-items:center;justify-content:center;border-radius:8px;border:none;background:transparent;color:#9ca3af;cursor:pointer;">
-                    <span class="material-symbols-outlined" style="font-size:20px;">close</span>
-                </button>
-            </div>
-
-            <div style="padding:20px 24px;display:flex;flex-direction:column;gap:16px;max-height:65vh;overflow-y:auto;">
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Cliente</label>
-                    <select id="modal-cliente" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
-                        <option value="" disabled>Selecciona un cliente</option>
-                        ${clienteOpciones}
-                    </select>
-                </div>
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Fecha de Viaje</label>
-                    <input type="date" id="modal-fecha-viaje"
-                        value="${presupuestoEditar ? formatDateInput(presupuestoEditar.fechaViaje) : ''}"
-                        style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
-                </div>
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Origen</label>
-                    <input type="text" id="modal-origen" placeholder="Ej. Aeropuerto T4"
-                        value="${presupuestoEditar?.origen || ''}"
-                        style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
-                </div>
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Destino</label>
-                    <input type="text" id="modal-destino" placeholder="Ej. Hotel Ritz"
-                        value="${presupuestoEditar?.destino || ''}"
-                        style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
-                </div>
-                <div style="display:flex;gap:16px;">
-                    <div style="flex:1;">
-                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">KM Estimados</label>
-                        <input type="number" id="modal-km" min="0" placeholder="0"
-                            value="${presupuestoEditar?.kilometrosEstimados || ''}"
-                            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
-                    </div>
-                    <div style="flex:1;">
-                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Precio Total (€)</label>
-                        <input type="number" id="modal-precio" step="0.01" min="0" placeholder="0.00"
-                            value="${presupuestoEditar?.precioTotal ?? ''}"
-                            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
-                    </div>
-                </div>
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Observaciones</label>
-                    <textarea id="modal-observaciones" rows="3" placeholder="Notas adicionales..."
-                        style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">${presupuestoEditar?.observaciones || ''}</textarea>
-                </div>
-                ${modo === 'editar' ? `
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Estado</label>
-                    <select id="modal-estado" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
-                        ${estadoOpciones}
-                    </select>
-                </div>` : ''}
-            </div>
-
-            <div style="display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:16px 24px;border-top:1px solid #f3f4f6;background:#f9fafb;">
-                <button class="modal-close" style="padding:8px 16px;border-radius:8px;border:none;background:transparent;font-size:14px;font-weight:500;color:#4b5563;cursor:pointer;">Cancelar</button>
-                <button id="modal-submit" style="padding:8px 20px;border-radius:8px;border:none;background:#1773cf;color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.1);">
-                    ${modo === 'crear' ? 'Crear Presupuesto' : 'Guardar Cambios'}
-                </button>
-            </div>
-        </div>`;
-
-    document.body.appendChild(overlay);
-
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-    overlay.querySelectorAll('.modal-close').forEach(btn => btn.addEventListener('click', () => overlay.remove()));
-    overlay.querySelector('#modal-submit').addEventListener('click', () => handleModalSubmit(modo, presupuestoEditar));
-}
-
-function formatDateInput(isoDate) {
-    if (!isoDate) return '';
-    return new Date(isoDate).toISOString().split('T')[0];
-}
-
-// ─── Submit modal crear/editar ───────────────────────────────────────────────
-async function handleModalSubmit(modo, presupuestoEditar) {
-    const clienteId    = document.getElementById('modal-cliente')?.value;
-    const fechaViaje   = document.getElementById('modal-fecha-viaje')?.value;
-    const origen       = document.getElementById('modal-origen')?.value.trim();
-    const destino      = document.getElementById('modal-destino')?.value.trim();
-    const km           = document.getElementById('modal-km')?.value;
-    const precio       = document.getElementById('modal-precio')?.value;
-    const observaciones= document.getElementById('modal-observaciones')?.value.trim();
-
-    if (!clienteId || !origen || !destino) {
-        mostrarToast('Cliente, origen y destino son obligatorios.', 'error');
+    if (!container || totalPaginas <= 1) {
+        if (container) container.innerHTML = '';
         return;
     }
 
-    try {
-        if (modo === 'crear') {
-            const nuevoPresupuesto = {
-                cliente: { id: parseInt(clienteId) },
-                fechaViaje: fechaViaje ? new Date(fechaViaje).toISOString() : null,
-                origen,
-                destino,
-                kilometrosEstimados: km ? parseInt(km) : null,
-                precioTotal: precio ? parseFloat(precio) : 0,
-                observaciones: observaciones || null,
-                estado: 'Pendiente',
-                fechaCreacion: new Date().toISOString()
-            };
+    const paginas = getPaginasVisibles(paginaActual, totalPaginas);
 
-            await apiCall(API.presupuestos, {
-                method: 'POST',
-                body: JSON.stringify(nuevoPresupuesto)
-            });
+    let html = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:24px;">';
 
-            document.querySelector('.modal-overlay')?.remove();
-            mostrarToast('Presupuesto creado correctamente.', 'success');
-            await cargarPresupuestos();
+    html += `<button onclick="cambiarPagina(${paginaActual - 1})"
+        ${paginaActual === 1 ? 'disabled' : ''}
+        style="display:flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;color:#6b7280;cursor:${paginaActual === 1 ? 'not-allowed' : 'pointer'};opacity:${paginaActual === 1 ? '0.5' : '1'};">
+        <span class="material-symbols-outlined" style="font-size:18px;">chevron_left</span>
+    </button>`;
 
+    paginas.forEach(p => {
+        if (p === '...') {
+            html += '<span style="display:flex;align-items:center;justify-content:center;height:36px;width:36px;color:#9ca3af;">...</span>';
         } else {
-            const presupuestoActualizado = {
-                ...presupuestoEditar,
-                cliente: { id: parseInt(clienteId) },
-                fechaViaje: fechaViaje ? new Date(fechaViaje).toISOString() : presupuestoEditar.fechaViaje,
-                origen,
-                destino,
-                kilometrosEstimados: km ? parseInt(km) : null,
-                precioTotal: precio ? parseFloat(precio) : 0,
-                observaciones: observaciones || null,
-                estado: document.getElementById('modal-estado')?.value || presupuestoEditar.estado
-            };
-
-            await apiCall(`${API.presupuestos}/${presupuestoEditar.id}`, {
-                method: 'PUT',
-                body: JSON.stringify(presupuestoActualizado)
-            });
-
-            document.querySelector('.modal-overlay')?.remove();
-            mostrarToast('Presupuesto actualizado correctamente.', 'success');
-            await cargarPresupuestos();
+            const isActive = p === paginaActual;
+            html += `<button onclick="cambiarPagina(${p})"
+                style="display:flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:8px;border:1px solid ${isActive ? '#1773cf' : '#e5e7eb'};background:${isActive ? '#1773cf' : '#fff'};color:${isActive ? '#fff' : '#6b7280'};font-size:14px;font-weight:${isActive ? '700' : '500'};cursor:pointer;">
+                ${p}
+            </button>`;
         }
-    } catch (err) {
-        console.error('Error en modal submit:', err);
-        mostrarToast(err.message, 'error');
-    }
+    });
+
+    html += `<button onclick="cambiarPagina(${paginaActual + 1})"
+        ${paginaActual === totalPaginas ? 'disabled' : ''}
+        style="display:flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;color:#6b7280;cursor:${paginaActual === totalPaginas ? 'not-allowed' : 'pointer'};opacity:${paginaActual === totalPaginas ? '0.5' : '1'};">
+        <span class="material-symbols-outlined" style="font-size:18px;">chevron_right</span>
+    </button>`;
+
+    html += '</div>';
+    container.innerHTML = html;
 }
+
+function getPaginasVisibles(actual, total) {
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    if (actual <= 4) return [1, 2, 3, 4, 5, '...', total];
+    if (actual >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+    return [1, '...', actual - 1, actual, actual + 1, '...', total];
+}
+
+window.cambiarPagina = function(numero) {
+    const totalPaginas = Math.ceil(presupuestosCache.length / ITEMS_POR_PAGINA);
+    if (numero < 1 || numero > totalPaginas) return;
+    paginaActual = numero;
+    renderTabla();
+};
 
 // ─── Eventos de botones en cada fila ─────────────────────────────────────────
 function adjuntarEventosTabla() {
+    // ENVIAR EMAIL
+    document.querySelectorAll('.send-btn').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const presupuestoId = parseInt(this.dataset.id);
+            await enviarPresupuesto(presupuestoId);
+        });
+    });
 
     // EDITAR
-    document.querySelectorAll('button[aria-label="Editar"]').forEach(btn => {
-        btn.addEventListener('click', async function () {
+    document.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', async function() {
             const presupuesto = presupuestosCache.find(p => p.id == this.dataset.id);
             if (!presupuesto) return;
-
-            if (modalClientes.length === 0) {
-                try { modalClientes = await apiCall(API.clientes); }
-                catch (e) { mostrarToast('No se pudieron cargar los clientes.', 'error'); return; }
-            }
-
-            crearModal('editar', presupuesto);
+            abrirModalEditar(presupuesto);
         });
     });
 
     // ELIMINAR
-    document.querySelectorAll('button[aria-label="Eliminar"]').forEach(btn => {
-        btn.addEventListener('click', async function () {
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', async function() {
             const presupuesto = presupuestosCache.find(p => p.id == this.dataset.id);
             const nombre = presupuesto?.cliente?.nombre || `Presupuesto #${this.dataset.id}`;
 
-            if (!confirm(`¿Estás seguro de que deseas eliminar el presupuesto de ${nombre}?`)) return;
+            if (!confirm(`¿Estás seguro de eliminar el presupuesto de ${nombre}?`)) return;
 
             try {
                 await apiCall(`${API.presupuestos}/${this.dataset.id}`, { method: 'DELETE' });
-                mostrarToast(`Presupuesto de ${nombre} eliminado.`, 'success');
-                await cargarPresupuestos();
-            } catch (err) {
-                mostrarToast(err.message, 'error');
-            }
-        });
-    });
-
-    // ENVIAR PRESUPUESTO
-document.querySelectorAll('button[aria-label="Enviar presupuesto"]').forEach(btn => {
-    btn.addEventListener('click', async function () {
-        const presupuesto = presupuestosCache.find(p => p.id == this.dataset.id);
-        const nombre = presupuesto?.cliente?.nombre || `Presupuesto #${this.dataset.id}`;
-
-        if (!confirm(`¿Enviar presupuesto por email a ${nombre}?`)) return;
-
-        try {
-            // Llamar al endpoint de envío CON AuthService
-            await apiCall(`${API.presupuestos}/${this.dataset.id}/enviar`, {
-                method: 'POST'
-            });
-
-            mostrarToast(`Presupuesto enviado por email a ${nombre}.`, 'success');
-            await cargarPresupuestos();
-        } catch (err) {
-            console.error('Error enviando presupuesto:', err);
-            mostrarToast(err.message, 'error');
-        }
-    });
-})
-
-    // CONVERTIR EN RESERVA
-    document.querySelectorAll('button[aria-label="Convertir en Reserva"]').forEach(btn => {
-        btn.addEventListener('click', async function () {
-            const presupuesto = presupuestosCache.find(p => p.id == this.dataset.id);
-            const nombre = presupuesto?.cliente?.nombre || `Presupuesto #${this.dataset.id}`;
-
-            if (!confirm(`¿Convertir el presupuesto de ${nombre} en una reserva?`)) return;
-
-            try {
-                // Actualizar estado a Aceptado
-                const actualizado = { ...presupuesto, estado: 'Aceptado' };
-                await apiCall(`${API.presupuestos}/${this.dataset.id}`, {
-                    method: 'PUT',
-                    body: JSON.stringify(actualizado)
-                });
-
-                mostrarToast(`Presupuesto de ${nombre} convertido en reserva.`, 'success');
+                mostrarToast(`Presupuesto eliminado correctamente.`, 'success');
                 await cargarPresupuestos();
             } catch (err) {
                 mostrarToast(err.message, 'error');
@@ -511,7 +350,48 @@ document.querySelectorAll('button[aria-label="Enviar presupuesto"]').forEach(btn
     });
 }
 
-// ─── INIT ────────────────────────────────────────────────────────────────────
+// ─── Enviar presupuesto por email ────────────────────────────────────────────
+async function enviarPresupuesto(presupuestoId) {
+    if (!confirm('¿Enviar este presupuesto por email al cliente?')) return;
+
+    try {
+        await apiCall(`${API.presupuestos}/${presupuestoId}/enviar`, {
+            method: 'POST'
+        });
+        mostrarToast('Presupuesto enviado por email correctamente.', 'success');
+        await cargarPresupuestos();
+    } catch (err) {
+        console.error('Error enviando presupuesto:', err);
+        mostrarToast('Error al enviar el presupuesto: ' + err.message, 'error');
+    }
+}
+
+// ─── Filtro por cliente ──────────────────────────────────────────────────────
+function aplicarFiltroCliente() {
+    const input = document.getElementById('searchInput');
+    if (!input) return;
+
+    input.addEventListener('input', function(e) {
+        const termino = e.target.value.toLowerCase();
+        const filas = document.querySelectorAll('tbody tr');
+
+        filas.forEach(fila => {
+            const cliente = fila.querySelector('td:nth-child(2)')?.textContent.toLowerCase() || '';
+            fila.style.display = cliente.includes(termino) ? '' : 'none';
+        });
+    });
+}
+
+// ─── Modal crear/editar (placeholder - implementar según necesidad) ─────────
+function abrirModalEditar(presupuesto) {
+    mostrarToast('Función de edición en desarrollo', 'info');
+    console.log('Editar presupuesto:', presupuesto);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INIT CON CONFIGURACIÓN DE LOGOUT
+// ═══════════════════════════════════════════════════════════════════════════
+
 document.addEventListener('DOMContentLoaded', async function () {
 
     // Verificar autenticación
@@ -520,90 +400,19 @@ document.addEventListener('DOMContentLoaded', async function () {
         return;
     }
 
-    // Botón crear nuevo presupuesto
-    const createBtn = document.getElementById('createBudgetBtn');
-    if (createBtn) {
-        createBtn.addEventListener('click', async () => {
-            if (modalClientes.length === 0) {
-                try { modalClientes = await apiCall(API.clientes); }
-                catch (e) { mostrarToast('No se pudieron cargar los clientes.', 'error'); return; }
-            }
-            crearModal('crear');
+    // ✅ IMPORTANTE: Configurar el menú de logout
+    configurarLogout();
+
+    // Botón añadir presupuesto
+    const addBtn = document.getElementById('addBudgetBtn');
+    if (addBtn) {
+        addBtn.addEventListener('click', () => {
+            mostrarToast('Función de creación en desarrollo', 'info');
         });
     }
 
+    aplicarFiltroCliente();
     await cargarPresupuestos();
 
-    console.log('Taxicamino - Sistema de gestión de presupuestos conectado a la API.');
+    console.log('✅ Taxicamino - Sistema de gestión de presupuestos conectado.');
 });
-
-document.querySelector('a[href="#"]')?.addEventListener('click', async (e) => {
-    e.preventDefault();
-
-    if (modalClientes.length === 0) {
-        try { modalClientes = await apiCall(API.clientes); }
-        catch (err) { mostrarToast('No se pudieron cargar los clientes.', 'error'); return; }
-    }
-
-    mostrarModalSeleccionarCliente();
-});
-
-function mostrarModalSeleccionarCliente() {
-    // Modal simple para elegir cliente
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:50;display:flex;align-items:center;justify-content:center;';
-
-    const opciones = modalClientes.map(c =>
-        `<button onclick="filtrarPorCliente(${c.id})" style="width:100%;text-align:left;padding:12px 16px;border-bottom:1px solid #e5e7eb;hover:background:#f9fafb;cursor:pointer;">${c.nombre}</button>`
-    ).join('');
-
-    overlay.innerHTML = `
-        <div style="background:#fff;border-radius:16px;width:100%;max-width:400px;max-height:500px;overflow:hidden;">
-            <div style="padding:20px 24px;border-bottom:1px solid #e5e7eb;">
-                <h3 style="font-size:18px;font-weight:700;">Selecciona un cliente</h3>
-            </div>
-            <div style="overflow-y:auto;max-height:400px;">${opciones}</div>
-        </div>`;
-
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-}
-
-function filtrarPorCliente(clienteId) {
-    document.querySelector('.modal-overlay')?.remove();
-
-    const filtrados = presupuestosCache.filter(p => p.cliente?.id === clienteId);
-
-    if (filtrados.length === 0) {
-        mostrarToast('Este cliente no tiene presupuestos.', 'info');
-        return;
-    }
-
-    // Guardar cache original y mostrar solo los filtrados
-    const cacheOriginal = [...presupuestosCache];
-    presupuestosCache = filtrados;
-    paginaActual = 1;
-    renderTabla();
-    renderPaginacion();
-
-    // Botón para volver a ver todos
-    const header = document.querySelector('main > div:first-child');
-    const btnVolver = document.createElement('button');
-    btnVolver.id = 'btnVolverTodos';
-    btnVolver.className = 'px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors';
-    btnVolver.textContent = '← Ver todos los presupuestos';
-    btnVolver.onclick = () => {
-        presupuestosCache = cacheOriginal;
-        paginaActual = 1;
-        renderTabla();
-        renderPaginacion();
-        btnVolver.remove();
-    };
-    header.appendChild(btnVolver);
-
-    mostrarToast(`Mostrando ${filtrados.length} presupuesto(s) del cliente.`, 'info');
-}
-
-// Exponer globalmente
-window.filtrarPorCliente = filtrarPorCliente;

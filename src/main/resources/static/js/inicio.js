@@ -11,7 +11,7 @@ tailwind.config = {
 
 // ─── BASE URLs de los controllers ───────────────────────────────────────────
 const API = {
-    rutas:       '/api/rutas',
+    rutas:       '/api/rutas-diarias',
     detalles:    '/api/ruta-detalles',
     repartidores:'/api/repartidores'
 };
@@ -33,6 +33,7 @@ async function apiCall(url, options = {}) {
 // ─── Estado local ────────────────────────────────────────────────────────────
 let rutasCache = [];
 let repartidoresCache = [];
+let fechaSeleccionada = new Date();
 
 // ─── Paginación ──────────────────────────────────────────────────────────────
 const ITEMS_POR_PAGINA = 4;
@@ -51,10 +52,135 @@ function getEstadoStyle(estado) {
     return `background-color:${s.bg};color:${s.text};border-color:${s.border};`;
 }
 
-// ─── Cargar rutas del día desde el backend ───────────────────────────────────
-async function cargarRutasDeHoy() {
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ CONFIGURACIÓN DE LOGOUT (IGUAL QUE CLIENTES.JS)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function configurarLogout() {
+    // Buscar el botón de usuario en el header
+    const userButton = document.querySelector('header button[class*="rounded-full"]');
+    if (userButton) {
+        // Convertir el botón en un dropdown con opción de logout
+        userButton.addEventListener('click', () => {
+            mostrarMenuUsuario();
+        });
+    }
+}
+
+function mostrarMenuUsuario() {
+    // Eliminar menú existente si hay uno
+    const menuExistente = document.getElementById('userMenu');
+    if (menuExistente) {
+        menuExistente.remove();
+        return;
+    }
+
+    const userInfo = AuthService.getUserInfo();
+
+    const menu = document.createElement('div');
+    menu.id = 'userMenu';
+    menu.className = 'absolute top-16 right-10 bg-white rounded-lg shadow-xl border border-gray-100 py-2 z-50 min-w-[200px]';
+    menu.innerHTML = `
+        <div class="px-4 py-2 border-b border-gray-100">
+            <p class="text-sm font-semibold text-gray-900">${userInfo?.username || 'Usuario'}</p>
+            <p class="text-xs text-gray-500">${userInfo?.role || 'USER'}</p>
+        </div>
+        <button onclick="AuthService.logout()" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2">
+            <span class="material-symbols-outlined text-lg">logout</span>
+            <span>Cerrar sesión</span>
+        </button>
+    `;
+
+    document.body.appendChild(menu);
+
+    // Cerrar al hacer clic fuera
+    setTimeout(() => {
+        document.addEventListener('click', function cerrarMenu(e) {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', cerrarMenu);
+            }
+        });
+    }, 100);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FUNCIONES DE FILTRO DE FECHA
+// ═══════════════════════════════════════════════════════════════════════════
+
+function inicializarFiltroFecha() {
+    const inputFecha = document.getElementById('fecha-filtro');
+    if (inputFecha) {
+        inputFecha.value = formatearFechaInput(fechaSeleccionada);
+        inputFecha.addEventListener('change', (e) => {
+            fechaSeleccionada = new Date(e.target.value + 'T00:00:00');
+            cargarRutasDelDia();
+        });
+    }
+
+    const btnAyer = document.getElementById('btn-ayer');
+    const btnHoy = document.getElementById('btn-hoy');
+    const btnManana = document.getElementById('btn-manana');
+
+    if (btnAyer) btnAyer.addEventListener('click', () => cambiarFecha(-1));
+    if (btnHoy) btnHoy.addEventListener('click', () => {
+        fechaSeleccionada = new Date();
+        const inputFecha = document.getElementById('fecha-filtro');
+        if (inputFecha) inputFecha.value = formatearFechaInput(fechaSeleccionada);
+        cargarRutasDelDia();
+    });
+    if (btnManana) btnManana.addEventListener('click', () => cambiarFecha(1));
+}
+
+function cambiarFecha(dias) {
+    fechaSeleccionada.setDate(fechaSeleccionada.getDate() + dias);
+    const inputFecha = document.getElementById('fecha-filtro');
+    if (inputFecha) inputFecha.value = formatearFechaInput(fechaSeleccionada);
+    cargarRutasDelDia();
+}
+
+function formatearFechaInput(fecha) {
+    const year = fecha.getFullYear();
+    const month = String(fecha.getMonth() + 1).padStart(2, '0');
+    const day = String(fecha.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function formatearFechaMostrar(fecha) {
+    const day = String(fecha.getDate()).padStart(2, '0');
+    const month = String(fecha.getMonth() + 1).padStart(2, '0');
+    const year = fecha.getFullYear();
+    return `${day}/${month}/${year}`;
+}
+
+function actualizarDisplayFecha() {
+    const fechaDisplay = document.getElementById('fecha-display');
+    if (!fechaDisplay) return;
+
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    const fechaSel = new Date(fechaSeleccionada);
+    fechaSel.setHours(0, 0, 0, 0);
+
+    let textoFecha = formatearFechaMostrar(fechaSeleccionada);
+
+    if (fechaSel.getTime() === hoy.getTime()) {
+        textoFecha = `Hoy - ${textoFecha}`;
+    } else if (fechaSel.getTime() === hoy.getTime() + 86400000) {
+        textoFecha = `Mañana - ${textoFecha}`;
+    } else if (fechaSel.getTime() === hoy.getTime() - 86400000) {
+        textoFecha = `Ayer - ${textoFecha}`;
+    }
+
+    fechaDisplay.textContent = textoFecha;
+}
+
+// ─── Cargar rutas del día seleccionado ──────────────────────────────────────
+async function cargarRutasDelDia() {
     try {
-        rutasCache = await apiCall(`${API.rutas}/hoy`);
+        actualizarDisplayFecha();
+        const fechaStr = formatearFechaInput(fechaSeleccionada);
+        rutasCache = await apiCall(`${API.rutas}/fecha/${fechaStr}`);
         paginaActual = 1;
         renderTabla();
         renderPaginacion();
@@ -65,7 +191,10 @@ async function cargarRutasDeHoy() {
     }
 }
 
-// ─── Renderizar tabla según página actual ───────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// RENDERIZAR TABLA CON ALBERGUES ORDENADOS
+// ═══════════════════════════════════════════════════════════════════════════
+
 function renderTabla() {
     const tbody = document.querySelector('table tbody');
     if (!tbody) return;
@@ -79,7 +208,7 @@ function renderTabla() {
         tbody.innerHTML = `
             <tr>
                 <td colspan="6" style="padding:40px 24px;text-align:center;font-size:14px;color:#9ca3af;">
-                    No hay rutas programadas para hoy.
+                    No hay rutas programadas para esta fecha.
                 </td>
             </tr>`;
         return;
@@ -101,6 +230,56 @@ function renderTabla() {
         const cliente = r.cliente || 'Cliente no especificado';
         const repartidor = r.repartidor?.nombre || 'Sin asignar';
 
+        // GENERAR LISTA DE ALBERGUES ORDENADOS
+        let alberguesHTML = '';
+        if (r.detalles && r.detalles.length > 0) {
+            const detallesOrdenados = [...r.detalles].sort((a, b) => a.orden - b.orden);
+
+            alberguesHTML = `
+                <div style="margin-top:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+                        <span class="material-symbols-outlined" style="font-size:16px;color:#1773cf;">location_on</span>
+                        <span style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">
+                            ${detallesOrdenados.length} parada${detallesOrdenados.length > 1 ? 's' : ''}
+                        </span>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:6px;">
+                        ${detallesOrdenados.map(detalle => `
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;background:#1773cf;color:white;border-radius:50%;font-size:11px;font-weight:700;flex-shrink:0;">
+                                    ${detalle.orden}
+                                </span>
+                                <div style="flex:1;min-width:0;">
+                                    <div style="font-size:13px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                                        ${detalle.albergue?.nombre || 'Albergue'}
+                                    </div>
+                                    <div style="font-size:11px;color:#6b7280;">
+                                        ${detalle.albergue?.ciudad || ''}, ${detalle.albergue?.provincia || ''}
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>`;
+        }
+
+        // BOTONES DE ESTADO dinámicos según el estado actual
+        let botonesEstado = '';
+        if (estado === 'PENDIENTE') {
+            botonesEstado = `
+                <button data-id="${r.id}" data-estado="EN_CURSO" class="btn-cambiar-estado flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-colors border border-blue-200">
+                    <span class="material-symbols-outlined text-sm">play_arrow</span> Iniciar
+                </button>`;
+        } else if (estado === 'EN_CURSO') {
+            botonesEstado = `
+                <button data-id="${r.id}" data-estado="COMPLETADA" class="btn-cambiar-estado flex items-center gap-1 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-100 transition-colors border border-green-200">
+                    <span class="material-symbols-outlined text-sm">check_circle</span> Completar
+                </button>`;
+        } else if (estado === 'COMPLETADA') {
+            botonesEstado = `
+                <span class="text-xs text-gray-400 italic">Finalizada</span>`;
+        }
+
         tr.innerHTML = `
             <td class="px-6 py-5 whitespace-nowrap text-sm font-semibold text-gray-900">${hora}</td>
             <td class="px-6 py-5">
@@ -109,6 +288,7 @@ function renderTabla() {
                     <div class="text-xs text-gray-400 flex items-center gap-1">
                         <span class="material-symbols-outlined text-xs">south</span> ${r.destino || 'Destino no especificado'}
                     </div>
+                    ${alberguesHTML}
                 </div>
             </td>
             <td class="px-6 py-5">
@@ -124,12 +304,10 @@ function renderTabla() {
                 </span>
             </td>
             <td class="px-6 py-5 whitespace-nowrap">
-                <div class="flex items-center gap-4">
+                <div class="flex items-center gap-3 flex-wrap">
+                    ${botonesEstado}
                     <button aria-label="Editar" data-id="${r.id}" class="text-primary hover:text-blue-800 text-sm font-semibold flex items-center gap-1 transition-colors">
-                        <span class="material-symbols-outlined text-base">edit</span> Editar
-                    </button>
-                    <button aria-label="Duplicar" data-id="${r.id}" class="text-gray-400 hover:text-primary text-sm font-semibold flex items-center gap-1 transition-colors">
-                        <span class="material-symbols-outlined text-base">content_copy</span> Duplicar
+                        <span class="material-symbols-outlined text-base">edit</span>
                     </button>
                 </div>
             </td>`;
@@ -140,7 +318,32 @@ function renderTabla() {
     adjuntarEventosTabla();
 }
 
-// ─── Paginación dinámica ─────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// CAMBIAR ESTADO DE RUTA
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function cambiarEstadoRuta(rutaId, nuevoEstado) {
+    const textoEstado = nuevoEstado === 'EN_CURSO' ? 'En curso' : nuevoEstado === 'COMPLETADA' ? 'Completada' : nuevoEstado;
+
+    if (!confirm(`¿Cambiar el estado de esta ruta a "${textoEstado}"?`)) {
+        return;
+    }
+
+    try {
+        await apiCall(`${API.rutas}/${rutaId}/estado`, {
+            method: 'PUT',
+            body: JSON.stringify({ estado: nuevoEstado })
+        });
+
+        mostrarToast(`Estado actualizado a ${textoEstado}`, 'success');
+        await cargarRutasDelDia();
+    } catch (err) {
+        console.error('Error cambiando estado:', err);
+        mostrarToast('Error al cambiar el estado: ' + err.message, 'error');
+    }
+}
+
+// ─── Paginación y demás funciones (sin cambios) ─────────────────────────────
 function renderPaginacion() {
     const contenedor = document.querySelector('.flex.items-center.gap-1');
     if (!contenedor) return;
@@ -202,7 +405,6 @@ function getPaginasVisibles(actual, total) {
     return paginas;
 }
 
-// ─── Actualizar estadísticas ─────────────────────────────────────────────────
 function actualizarEstadisticas(rutas) {
     const total = rutas.length;
     const completadas = rutas.filter(r => determinarEstado(r) === 'COMPLETADA').length;
@@ -216,7 +418,6 @@ function actualizarEstadisticas(rutas) {
     }
 }
 
-// ─── Determinar estado de la ruta ───────────────────────────────────────────
 function determinarEstado(ruta) {
     if (ruta.estado) return ruta.estado.toUpperCase();
     if (ruta.completada) return 'COMPLETADA';
@@ -225,7 +426,6 @@ function determinarEstado(ruta) {
     return 'PENDIENTE';
 }
 
-// ─── Extraer hora de fecha ISO ──────────────────────────────────────────────
 function extraerHora(isoDate) {
     if (!isoDate) return '--:--';
     const d = new Date(isoDate);
@@ -233,7 +433,6 @@ function extraerHora(isoDate) {
     return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// ─── Toast ───────────────────────────────────────────────────────────────────
 function mostrarToast(msg, tipo = 'error') {
     document.querySelector('.toast-notif')?.remove();
 
@@ -269,7 +468,7 @@ function mostrarToast(msg, tipo = 'error') {
     }, 3000);
 }
 
-// ─── Modal crear / editar ruta ───────────────────────────────────────────────
+// ─── Modal y funciones auxiliares (código completo del modal) ───────────────
 function crearModal(modo, rutaEditar = null) {
     document.querySelector('.modal-overlay')?.remove();
 
@@ -370,7 +569,6 @@ function formatDatetimeLocal(isoDate) {
     return new Date(isoDate).toISOString().slice(0, 16);
 }
 
-// ─── Submit modal crear/editar ───────────────────────────────────────────────
 async function handleModalSubmit(modo, rutaEditar) {
     const fecha = document.getElementById('modal-fecha')?.value;
     const origen = document.getElementById('modal-origen')?.value.trim();
@@ -403,7 +601,7 @@ async function handleModalSubmit(modo, rutaEditar) {
 
             document.querySelector('.modal-overlay')?.remove();
             mostrarToast('Ruta creada correctamente.', 'success');
-            await cargarRutasDeHoy();
+            await cargarRutasDelDia();
 
         } else {
             const rutaActualizada = {
@@ -424,7 +622,7 @@ async function handleModalSubmit(modo, rutaEditar) {
 
             document.querySelector('.modal-overlay')?.remove();
             mostrarToast('Ruta actualizada correctamente.', 'success');
-            await cargarRutasDeHoy();
+            await cargarRutasDelDia();
         }
     } catch (err) {
         console.error('Error en modal submit:', err);
@@ -432,10 +630,15 @@ async function handleModalSubmit(modo, rutaEditar) {
     }
 }
 
-// ─── Eventos de botones en cada fila ─────────────────────────────────────────
 function adjuntarEventosTabla() {
+    document.querySelectorAll('.btn-cambiar-estado').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const rutaId = parseInt(this.dataset.id);
+            const nuevoEstado = this.dataset.estado;
+            cambiarEstadoRuta(rutaId, nuevoEstado);
+        });
+    });
 
-    // EDITAR
     document.querySelectorAll('button[aria-label="Editar"]').forEach(btn => {
         btn.addEventListener('click', async function () {
             const ruta = rutasCache.find(r => r.id == this.dataset.id);
@@ -449,53 +652,30 @@ function adjuntarEventosTabla() {
             crearModal('editar', ruta);
         });
     });
-
-    // DUPLICAR
-    document.querySelectorAll('button[aria-label="Duplicar"]').forEach(btn => {
-        btn.addEventListener('click', async function () {
-            const ruta = rutasCache.find(r => r.id == this.dataset.id);
-            if (!ruta) return;
-
-            if (!confirm(`¿Duplicar la ruta ${ruta.origen} → ${ruta.destino}?`)) return;
-
-            try {
-                const nuevaRuta = {
-                    ...ruta,
-                    id: null,
-                    fecha: new Date().toISOString()
-                };
-
-                await apiCall(API.rutas, {
-                    method: 'POST',
-                    body: JSON.stringify(nuevaRuta)
-                });
-
-                mostrarToast('Ruta duplicada correctamente.', 'success');
-                await cargarRutasDeHoy();
-            } catch (err) {
-                mostrarToast(err.message, 'error');
-            }
-        });
-    });
 }
 
-// ─── INIT ────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ INIT - CON VERIFICACIÓN DE AUTENTICACIÓN Y CONFIGURACIÓN DE LOGOUT
+// ═══════════════════════════════════════════════════════════════════════════
+
 document.addEventListener('DOMContentLoaded', async function () {
 
-    // Verificar autenticación
-    if (!AuthService.isAuthenticated()) {
-        window.location.href = '/login.html';
-        return;
+    console.log('Taxicamino - Sistema de gestión de ruta diaria iniciando...');
+
+    // ✅ Verificar autenticación (igual que clientes.js)
+    if (!AuthService.checkAuth()) {
+        return; // Si no está autenticado, checkAuth() redirige al login
     }
 
-    // Actualizar fecha display
-    const inputFecha = document.querySelector('input[type="text"][readonly]');
-    if (inputFecha) {
-        const fecha = new Date();
-        inputFecha.value = fecha.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
-    }
+    // ✅ Mostrar información del usuario
+    const userInfo = AuthService.getUserInfo();
+    console.log('👤 Usuario autenticado:', userInfo);
 
-    // Botón crear nueva ruta
+    // ✅ Configurar logout en el botón de usuario
+    configurarLogout();
+
+    inicializarFiltroFecha();
+
     const createBtn = document.querySelector('button.bg-primary');
     if (createBtn) {
         createBtn.addEventListener('click', async () => {
@@ -507,7 +687,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         });
     }
 
-    await cargarRutasDeHoy();
+    await cargarRutasDelDia();
 
-    console.log('Taxicamino - Sistema de gestión de ruta diaria conectado a la API.');
+    console.log('Taxicamino - Gestión de ruta diaria cargado correctamente');
 });

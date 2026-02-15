@@ -1,4 +1,4 @@
-// ============================================
+    // ============================================
 // SERVICIO DE AUTENTICACIÓN JWT
 // ============================================
 const API_BASE_URL = 'http://localhost:8080/api'; // Ajusta el puerto según tu configuración

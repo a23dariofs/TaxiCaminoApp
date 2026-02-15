@@ -40,10 +40,26 @@ public class FacturaService {
 
     public Factura actualizar(Long id, Factura facturaActualizada) {
         Factura factura = buscarPorId(id);
-        factura.setFechaEmision(facturaActualizada.getFechaEmision());
-        factura.setImporteTotal(facturaActualizada.getImporteTotal());
-        factura.setCliente(facturaActualizada.getCliente());
-        factura.setLineas(facturaActualizada.getLineas());
+
+        if (facturaActualizada.getFechaEmision() != null) {
+            factura.setFechaEmision(facturaActualizada.getFechaEmision());
+        }
+        if (facturaActualizada.getFechaPago() != null) {
+            factura.setFechaPago(facturaActualizada.getFechaPago());
+        }
+        if (facturaActualizada.getImporteTotal() != null) {
+            factura.setImporteTotal(facturaActualizada.getImporteTotal());
+        }
+        if (facturaActualizada.getEstado() != null) {
+            factura.setEstado(facturaActualizada.getEstado());
+        }
+        if (facturaActualizada.getMetodoPago() != null) {
+            factura.setMetodoPago(facturaActualizada.getMetodoPago());
+        }
+        if (facturaActualizada.getConcepto() != null) {
+            factura.setConcepto(facturaActualizada.getConcepto());
+        }
+
         return facturaRepository.save(factura);
     }
 

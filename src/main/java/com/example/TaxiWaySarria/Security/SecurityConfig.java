@@ -36,9 +36,17 @@ public class SecurityConfig {
                                 "/js/**",
                                 "/img/**",
                                 "/",
-                                "/*.html"
+                                "/*.html",
+                                "/login.html" // Asegúrate de que el login sea explícitamente público
                         ).permitAll()
                         .anyRequest().authenticated()
+                )
+                // Agregamos esto para manejar el error de "No autenticado"
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            // Si el usuario no está autenticado, redirigir a login.html
+                            response.sendRedirect("/html/login.html");
+                        })
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);

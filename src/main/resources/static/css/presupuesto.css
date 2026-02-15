@@ -1,4 +1,9 @@
+/* ============================================
+   ESTILOS PERSONALIZADOS - PRESUPUESTO
+   ============================================ */
+
 :root {
+
     --primary: #1773cf;
     --background-light: #ffffff;
 }
@@ -12,3 +17,4 @@
 body {
     font-family: 'Inter', sans-serif;
 }
+

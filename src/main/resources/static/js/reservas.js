@@ -1,3 +1,15 @@
+// Configuración de Tailwind CSS
+tailwind.config = {
+    darkMode: "class",
+    theme: {
+        extend: {
+            colors: {
+                "primary": "#1773cf",
+            }
+        },
+    },
+}
+
 // ─── BASE URLs de los controllers ───────────────────────────────────────────
 const API = {
     clientes:     '/api/clientes',
@@ -40,6 +52,57 @@ const ESTADO_STYLES = {
 function getEstadoStyle(estado) {
     const s = ESTADO_STYLES[estado] || ESTADO_STYLES['Completada'];
     return `background-color:${s.bg};color:${s.text};border-color:${s.border};`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONFIGURACIÓN DE LOGOUT
+// ═══════════════════════════════════════════════════════════════════════════
+function configurarLogout() {
+    // Buscar el botón de usuario en el header
+    const userButton = document.querySelector('header button[class*="rounded-full"]');
+    if (userButton) {
+        // Convertir el botón en un dropdown con opción de logout
+        userButton.addEventListener('click', () => {
+            mostrarMenuUsuario();
+        });
+    }
+}
+
+function mostrarMenuUsuario() {
+    // Eliminar menú existente si hay uno
+    const menuExistente = document.getElementById('userMenu');
+    if (menuExistente) {
+        menuExistente.remove();
+        return;
+    }
+
+    const userInfo = AuthService.getUserInfo();
+
+    const menu = document.createElement('div');
+    menu.id = 'userMenu';
+    menu.className = 'absolute top-16 right-10 bg-white rounded-lg shadow-xl border border-gray-100 py-2 z-50 min-w-[200px]';
+    menu.innerHTML = `
+        <div class="px-4 py-2 border-b border-gray-100">
+            <p class="text-sm font-semibold text-gray-900">${userInfo?.username || 'Usuario'}</p>
+            <p class="text-xs text-gray-500">${userInfo?.role || 'USER'}</p>
+        </div>
+        <button onclick="AuthService.logout()" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2">
+            <span class="material-symbols-outlined text-lg">logout</span>
+            <span>Cerrar sesión</span>
+        </button>
+    `;
+
+    document.body.appendChild(menu);
+
+    // Cerrar al hacer clic fuera
+    setTimeout(() => {
+        document.addEventListener('click', function cerrarMenu(e) {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', cerrarMenu);
+            }
+        });
+    }, 100);
 }
 
 // ─── Cargar reservas desde el backend ────────────────────────────────────────
@@ -571,6 +634,9 @@ document.addEventListener('DOMContentLoaded', async function () {
         return;
     }
 
+    // ✅ IMPORTANTE: Configurar el menú de logout
+    configurarLogout();
+
     // Botón crear nueva reserva
     const createBtn = document.getElementById('createReservationBtn');
     if (createBtn) {
@@ -586,5 +652,5 @@ document.addEventListener('DOMContentLoaded', async function () {
     adjuntarFiltros();
     await cargarReservas();
 
-    console.log('Taxicamino - Sistema de gestión de reservas conectado a la API.');
+    console.log('✅ Taxicamino - Sistema de gestión de reservas conectado a la API.');
 });
