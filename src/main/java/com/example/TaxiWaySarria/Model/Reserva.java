@@ -1,7 +1,9 @@
 package com.example.TaxiWaySarria.Model;
 
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 @Entity
@@ -18,6 +20,19 @@ public class Reserva {
     @JoinColumn(name = "cliente_id")
     private Cliente cliente;
 
+    @ManyToOne
+    @JoinColumn(name = "agencia_id")
+    private Agencia agencia;
+
+
+    @OneToMany(mappedBy = "reserva", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonManagedReference
+    private List<EtapaCamino> etapas = new ArrayList<>();
+
+    private Double precioTotal;
+
+    private LocalDate fechaCreacion;
+
     @OneToOne
     @JoinColumn(name = "presupuesto_id")
     private Presupuesto presupuesto;
@@ -29,6 +44,8 @@ public class Reserva {
             inverseJoinColumns = @JoinColumn(name = "repartidor_id")
     )
     private List<Repartidor> repartidoresAsignados;
+
+    private String observaciones;
 
 
     public Reserva() {
@@ -90,6 +107,47 @@ public class Reserva {
         this.repartidoresAsignados = repartidoresAsignados;
     }
 
+    public Agencia getAgencia() {
+        return agencia;
+    }
+
+    public void setAgencia(Agencia agencia) {
+        this.agencia = agencia;
+    }
+
+
+    public List<EtapaCamino> getEtapas() {
+        return etapas;
+    }
+
+    public void setEtapas(List<EtapaCamino> etapas) {
+        this.etapas = etapas;
+    }
+
+    public Double getPrecioTotal() {
+        return precioTotal;
+    }
+
+    public void setPrecioTotal(Double precioTotal) {
+        this.precioTotal = precioTotal;
+    }
+
+    public LocalDate getFechaCreacion() {
+        return fechaCreacion;
+    }
+
+    public void setFechaCreacion(LocalDate fechaCreacion) {
+        this.fechaCreacion = fechaCreacion;
+    }
+
+    public String getObservaciones() {
+        return observaciones;
+    }
+
+    public void setObservaciones(String observaciones) {
+        this.observaciones = observaciones;
+    }
+
     @Override
     public String toString() {
         return "Reserva{" +
@@ -97,9 +155,15 @@ public class Reserva {
                 ", fechaReserva=" + fechaReserva +
                 ", estado='" + estado + '\'' +
                 ", cliente=" + cliente +
+                ", agencia=" + agencia +
+                ", etapas=" + etapas +
+                ", precioTotal=" + precioTotal +
+                ", fechaCreacion=" + fechaCreacion +
                 ", presupuesto=" + presupuesto +
                 ", repartidoresAsignados=" + repartidoresAsignados +
+                ", observaciones='" + observaciones + '\'' +
                 '}';
     }
+
 }
 

@@ -1,5 +1,6 @@
 package com.example.TaxiWaySarria.Controller;
 
+import com.example.TaxiWaySarria.DTOs.ReservaDTO;
 import com.example.TaxiWaySarria.Model.Reserva;
 import com.example.TaxiWaySarria.Service.ReservaService;
 import org.springframework.http.ResponseEntity;
@@ -29,9 +30,17 @@ public class ReservaController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    @PostMapping("/cliente/{clienteId}")
-    public Reserva crearReserva(@PathVariable Long clienteId, @RequestBody Reserva reserva) {
-        return reservaService.crearReserva(clienteId, reserva);
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ✅ NUEVO: Crear reserva completa con etapas del Camino
+    // ═══════════════════════════════════════════════════════════════════════════
+    @PostMapping("/completa")
+    public ResponseEntity<Reserva> crearReservaCompleta(@RequestBody ReservaDTO reservaDTO) {
+        try {
+            Reserva reserva = reservaService.crearReservaCompleta(reservaDTO);
+            return ResponseEntity.ok(reserva);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(null);
+        }
     }
 
     @PutMapping("/{id}/estado")

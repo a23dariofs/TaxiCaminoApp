@@ -255,32 +255,35 @@ Email al cliente cuando paga (recibo)
 Email al admin cuando se acepta un presupuesto
 
 
-🎯 RESUMEN DE ARCHIVOS A ACTUALIZAR
-Backend:
 
-✅ PresupuestoService.java - Añadir lógica de auto-crear Reserva + Factura
-✅ PresupuestoController.java - Redirigir a pago.html con mensaje
-⚠️ ReservaService.java - Añadir validación de pago + auto-crear RutaDiaria
-⚠️ Reserva.java - Añadir campo observaciones
-
-Frontend:
-
-✅ pago.js - Detectar mensaje de presupuesto aceptado
+COUSAS QUE CAMBIAR:
 
 
-📞 SOPORTE
-Si tienes dudas o errores durante la implementación, revisa:
-
-Logs de Spring Boot en la consola
-Consola del navegador (F12)
-Verifica que todos los campos necesarios existen en la base de datos
-
-SQL para añadir columna observaciones a reservas:
-sqlALTER TABLE reservas ADD COLUMN observaciones VARCHAR(500);
-
-
-Importante:
-Crear ben as reservas como en taxicamino, meter a ruta completa porque non é solo un destino e un origen.   
-Pestaña de agencias, que salgan as reservas de cada agencia nunha fecha determinada, para poder facturar.
+Crear ben as reservas como en taxicamino, meter a ruta completa porque non é solo un destino e un origen. ✅
+Pestaña de agencias, que salgan as reservas de cada agencia nunha fecha determinada, para poder facturar. 
 Gestión da ruta (añadir pestaña que sea solo cas mochilas, para diferencialo dos viaxes do taxi)
 Excels.
+
+- Pestaña para crear agencias e asi non metelas todas desde a base de datos. ✅  
+- Cambiar o da pestaña de cliente para que salga todo directamente ao crear a reserva (nombre, telefono, etc...) ✅
+- Facturar en principio quitase ✅
+- En estado poñer pagado en ruta ou pagado por transferencia, bizum para levar control de como se foi pagando a reserva e asi. ✅
+- Na tabla de ruta diaria cambiar os campos en este orden:  Origen, Cliente, Numero de equipajes, precio, destino, agencia, empresa observacions ( para comentar algo)
+- A empresa e quen manda o servicio.
+
+Crear un boton en la reserva que sea crear una etiqueta.
+Para tema facturas -> Buscar por agencia ou empresa -> numero de reservas de cada empresa/agencia -> un intervalo de fechas para facer buscar os servicios que se fixeron en ese tempo e poder generar a factura.
+A factura -> en excel mellor seguindo o modelo
+facturas de viaxe ao 10% no de mochilas ao 21% vai incluido.
+
+En ruta diaria facer unha para viaxes de taxi e outra para mochilas.
+
+taxicaminolugo@gmail.com e +34689440529 (esto para añadir nas etiquetas e quitar o correo que ta posto xa e o qr)
+
+o mais importante nas facturas e que saque durante un intervalo de tempo os cartos a pagar de cada empresa ou a agencia
+
+meter nombre e que se garde para outras veces na base de datos.
+
+no tema dos taxis pode ser que se transpase o servicio a outro
+
+buscar por conductor para ver os viaxes que se lle dan (ver si esta pagado ou no)

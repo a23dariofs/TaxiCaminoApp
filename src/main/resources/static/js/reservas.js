@@ -14,12 +14,12 @@ tailwind.config = {
 const API = {
     clientes:     '/api/clientes',
     reservas:     '/api/reservas',
-    repartidores: '/api/repartidores'
+    repartidores: '/api/repartidores',
+    agencias:     '/api/agencias',
+    albergues:    '/api/albergues'
 };
 
 // ─── Helper: usa AuthService para mandar el token automáticamente ───────────
-// AuthService.authenticatedFetch() ya añade el header Authorization: Bearer {token}
-// y redirige al login si el token es inválido o expirado.
 async function apiCall(url, options = {}) {
     const res = await AuthService.authenticatedFetch(url, options);
 
@@ -34,13 +34,14 @@ async function apiCall(url, options = {}) {
 // ─── Estado local ────────────────────────────────────────────────────────────
 let reservasCache = [];
 let modalClientes = [];
+let modalAgencias = [];
+let modalAlbergues = [];
 
 // ─── Paginación ──────────────────────────────────────────────────────────────
 const ITEMS_POR_PAGINA = 4;
 let paginaActual = 1;
 
 // ─── Colores inline para estados ─────────────────────────────────────────────
-// Tailwind CDN no genera clases inyectadas por JS, así que se usan styles inline.
 const ESTADO_STYLES = {
     'Pendiente':  { bg: '#fffbeb', text: '#b45309', border: '#fcd34d' },
     'Confirmada': { bg: '#f0fdf4', text: '#15803d', border: '#bbf7d0' },
@@ -58,10 +59,8 @@ function getEstadoStyle(estado) {
 // CONFIGURACIÓN DE LOGOUT
 // ═══════════════════════════════════════════════════════════════════════════
 function configurarLogout() {
-    // Buscar el botón de usuario en el header
     const userButton = document.querySelector('header button[class*="rounded-full"]');
     if (userButton) {
-        // Convertir el botón en un dropdown con opción de logout
         userButton.addEventListener('click', () => {
             mostrarMenuUsuario();
         });
@@ -69,7 +68,6 @@ function configurarLogout() {
 }
 
 function mostrarMenuUsuario() {
-    // Eliminar menú existente si hay uno
     const menuExistente = document.getElementById('userMenu');
     if (menuExistente) {
         menuExistente.remove();
@@ -94,7 +92,6 @@ function mostrarMenuUsuario() {
 
     document.body.appendChild(menu);
 
-    // Cerrar al hacer clic fuera
     setTimeout(() => {
         document.addEventListener('click', function cerrarMenu(e) {
             if (!menu.contains(e.target)) {
@@ -144,9 +141,17 @@ function renderTabla() {
         tr.dataset.reservaId = r.id;
 
         const estadoStyle = getEstadoStyle(r.estado);
+
+        // Mostrar precio total de las etapas si existen
+        const precioMostrar = r.precioTotal ?? r.precio ?? 0;
         const precio = r.estado === 'Cancelada'
-            ? `<span style="text-decoration:line-through;color:#9ca3af;">${formatPrecio(r.precio)}</span>`
-            : `<span style="color:#111827;">${formatPrecio(r.precio)}</span>`;
+            ? `<span style="text-decoration:line-through;color:#9ca3af;">${formatPrecio(precioMostrar)}</span>`
+            : `<span style="color:#111827;">${formatPrecio(precioMostrar)}</span>`;
+
+        // Mostrar resumen de etapas si existen
+        const rutaInfo = r.etapas && r.etapas.length > 0
+            ? `${r.etapas[0].alojamientoSalida?.nombre || '—'} → ${r.etapas[r.etapas.length - 1].alojamientoDestino?.nombre || '—'} (${r.etapas.length} etapas)`
+            : `${r.origen || '—'} - ${r.destino || '—'}`;
 
         let botones = `
             <button aria-label="Editar" data-id="${r.id}"
@@ -167,11 +172,11 @@ function renderTabla() {
         }
 
         tr.innerHTML = `
-            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${formatFechaHora(r.fechaReserva)}</td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${formatFechaHora(r.fechaCreacion || r.fechaReserva)}</td>
             <td class="px-6 py-5 whitespace-nowrap text-sm font-medium text-gray-900">${r.cliente?.nombre || '—'}</td>
-            <td class="px-6 py-5 text-sm text-gray-600">${r.origen || '—'} - ${r.destino || '—'}</td>
-            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${r.pasajeros ?? '—'}</td>
-            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${r.necesidades || '-'}</td>
+            <td class="px-6 py-5 text-sm text-gray-600">${rutaInfo}</td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${r.pasajeros ?? (r.etapas?.[0]?.cantidadMochilas || '—')}</td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${r.observaciones || '-'}</td>
             <td class="px-6 py-5 text-right whitespace-nowrap text-sm font-bold">${precio}</td>
             <td class="px-6 py-5 whitespace-nowrap">
                 <span style="display:inline-flex;align-items:center;padding:4px 10px;border-radius:9999px;font-size:12px;font-weight:600;border:1px solid;${estadoStyle}">
@@ -258,6 +263,13 @@ function formatFechaHora(isoDate) {
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function formatFecha(isoDate) {
+    if (!isoDate) return '';
+    const d = new Date(isoDate);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 // ─── Formateo precio → "€45.00" ─────────────────────────────────────────────
 function formatPrecio(precio) {
     if (precio == null) return '—';
@@ -300,170 +312,367 @@ function mostrarToast(msg, tipo = 'error') {
     }, 3000);
 }
 
-// ─── Modal crear / editar reserva ────────────────────────────────────────────
-function crearModal(modo, reservaEditar = null) {
+// ═══════════════════════════════════════════════════════════════════════════
+// MODAL CREAR RESERVA CON ETAPAS
+// ═══════════════════════════════════════════════════════════════════════════
+
+let etapasCounter = 0;
+
+function crearModalReservaCompleta() {
     document.querySelector('.modal-overlay')?.remove();
 
-    const estadoOpciones = ['Pendiente', 'Confirmada', 'En curso', 'Completada', 'Cancelada']
-        .map(e => {
-            let selected = '';
-            if (modo === 'editar' && reservaEditar?.estado === e) selected = 'selected';
-            if (modo === 'crear' && e === 'Pendiente') selected = 'selected';
-            return `<option value="${e}" ${selected}>${e}</option>`;
-        })
-        .join('');
+    etapasCounter = 0;
 
     const clienteOpciones = modalClientes
-        .map(c => {
-            const selected = reservaEditar?.cliente?.id === c.id ? 'selected' : '';
-            return `<option value="${c.id}" ${selected}>${c.nombre}</option>`;
-        })
+        .map(c => `<option value="${c.id}">${c.nombre}</option>`)
+        .join('');
+
+    const agenciaOpciones = modalAgencias
+        .map(a => `<option value="${a.nombre}">`)
         .join('');
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:50;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease forwards;';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:50;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease forwards;overflow-y:auto;padding:20px;';
 
     overlay.innerHTML = `
-        <div style="background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.15);width:100%;max-width:448px;margin:0 16px;overflow:hidden;animation:modalIn 0.25s ease forwards;">
+        <div style="background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.15);width:100%;max-width:900px;margin:auto;overflow:hidden;animation:modalIn 0.25s ease forwards;">
+
+            <!-- Header -->
             <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #f3f4f6;">
-                <h3 style="font-size:18px;font-weight:700;color:#111827;">${modo === 'crear' ? 'Nueva Reserva' : 'Editar Reserva'}</h3>
+                <h3 style="font-size:18px;font-weight:700;color:#111827;">Nueva Reserva del Camino</h3>
                 <button class="modal-close" style="display:flex;height:32px;width:32px;align-items:center;justify-content:center;border-radius:8px;border:none;background:transparent;color:#9ca3af;cursor:pointer;">
                     <span class="material-symbols-outlined" style="font-size:20px;">close</span>
                 </button>
             </div>
 
-            <div style="padding:20px 24px;display:flex;flex-direction:column;gap:16px;max-height:60vh;overflow-y:auto;">
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Cliente</label>
-                    <select id="modal-cliente" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
-                        <option value="" disabled>Selecciona un cliente</option>
-                        ${clienteOpciones}
-                    </select>
-                </div>
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Fecha y Hora</label>
-                    <input type="datetime-local" id="modal-fecha"
-                        value="${reservaEditar ? formatDatetimeLocal(reservaEditar.fechaReserva) : ''}"
-                        style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
-                </div>
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Origen</label>
-                    <input type="text" id="modal-origen" placeholder="Ej. Aeropuerto T4"
-                        value="${reservaEditar?.origen || ''}"
-                        style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
-                </div>
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Destino</label>
-                    <input type="text" id="modal-destino" placeholder="Ej. Hotel Ritz"
-                        value="${reservaEditar?.destino || ''}"
-                        style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
-                </div>
-                <div style="display:flex;gap:16px;">
-                    <div style="flex:1;">
-                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Pasajeros</label>
-                        <input type="number" id="modal-pasajeros" min="1" placeholder="1"
-                            value="${reservaEditar?.pasajeros || ''}"
-                            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
-                    </div>
-                    <div style="flex:1;">
-                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Precio (€)</label>
-                        <input type="number" id="modal-precio" step="0.01" min="0" placeholder="0.00"
-                            value="${reservaEditar?.precio ?? ''}"
-                            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
+            <!-- Body -->
+            <div style="padding:20px 24px;max-height:70vh;overflow-y:auto;">
+
+                <!-- Datos Cliente (Buscar o Crear) -->
+                <div style="margin-bottom:24px;padding:16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;">
+                    <h4 style="font-size:13px;font-weight:700;color:#111827;margin-bottom:12px;">Datos del Cliente</h4>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                        <div>
+                            <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Email *</label>
+                            <input type="email" id="modal-cliente-email" placeholder="email@ejemplo.com" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;">
+                            <span id="cliente-encontrado-msg" style="display:none;font-size:11px;color:#15803d;margin-top:4px;">✓ Cliente encontrado</span>
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Teléfono *</label>
+                            <input type="tel" id="modal-cliente-telefono" placeholder="600123456" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Nombre *</label>
+                            <input type="text" id="modal-cliente-nombre" placeholder="Juan" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Apellidos</label>
+                            <input type="text" id="modal-cliente-apellidos" placeholder="Pérez García" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;">
+                        </div>
                     </div>
                 </div>
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Necesidades</label>
-                    <input type="text" id="modal-necesidades" placeholder="Ej. Silla bebé"
-                        value="${reservaEditar?.necesidades || ''}"
-                        style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
+
+                <!-- Datos Reserva -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
+                    <div>
+                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Agencia</label>
+                        <input list="agencias-list" id="modal-agencia" placeholder="Escribe o selecciona agencia" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;">
+                        <datalist id="agencias-list">
+                            ${agenciaOpciones}
+                        </datalist>
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Estado</label>
+                        <select id="modal-estado" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
+                            <option value="Pendiente" selected>Pendiente</option>
+                            <option value="Pagado en ruta">Pagado en ruta</option>
+                            <option value="Bizum">Bizum</option>
+                            <option value="Pagado por transferencia">Pagado por transferencia</option>
+                        </select>
+                    </div>
                 </div>
-                ${modo === 'editar' ? `
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Estado</label>
-                    <select id="modal-estado" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
-                        ${estadoOpciones}
-                    </select>
-                </div>` : ''}
+
+                <div style="margin-bottom:24px;">
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Observaciones</label>
+                    <textarea id="modal-observaciones" rows="2" placeholder="Observaciones/notas de la reserva" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;resize:vertical;"></textarea>
+                </div>
+
+                <!-- Etapas del Camino -->
+                <div style="margin-bottom:16px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                        <h4 style="font-size:14px;font-weight:700;color:#111827;">Etapas del Camino</h4>
+                        <button id="btn-add-etapa" type="button" style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:#1773cf;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">
+                            <span class="material-symbols-outlined" style="font-size:18px;">add</span>
+                            <span>Añadir Etapa</span>
+                        </button>
+                    </div>
+                    <div id="etapas-container" style="display:flex;flex-direction:column;gap:12px;">
+                        <!-- Las etapas se añaden dinámicamente aquí -->
+                    </div>
+                </div>
+
+                <!-- Precio Total -->
+                <div style="margin-top:24px;padding:16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-size:14px;font-weight:600;color:#6b7280;">PRECIO TOTAL:</span>
+                    <span id="precio-total-display" style="font-size:20px;font-weight:700;color:#1773cf;">€0.00</span>
+                </div>
             </div>
 
+            <!-- Footer -->
             <div style="display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:16px 24px;border-top:1px solid #f3f4f6;background:#f9fafb;">
                 <button class="modal-close" style="padding:8px 16px;border-radius:8px;border:none;background:transparent;font-size:14px;font-weight:500;color:#4b5563;cursor:pointer;">Cancelar</button>
-                <button id="modal-submit" style="padding:8px 20px;border-radius:8px;border:none;background:#1773cf;color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.1);">
-                    ${modo === 'crear' ? 'Crear Reserva' : 'Guardar Cambios'}
+                <button id="modal-submit-completa" style="padding:8px 20px;border-radius:8px;border:none;background:#1773cf;color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.1);">
+                    Crear Reserva
                 </button>
             </div>
         </div>`;
 
     document.body.appendChild(overlay);
 
+    // Eventos
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
     overlay.querySelectorAll('.modal-close').forEach(btn => btn.addEventListener('click', () => overlay.remove()));
-    overlay.querySelector('#modal-submit').addEventListener('click', () => handleModalSubmit(modo, reservaEditar));
+
+    // Añadir primera etapa automáticamente
+    document.getElementById('btn-add-etapa').addEventListener('click', añadirEtapa);
+    añadirEtapa();
+
+    // Submit
+    document.getElementById('modal-submit-completa').addEventListener('click', handleSubmitReservaCompleta);
 }
 
-function formatDatetimeLocal(isoDate) {
-    if (!isoDate) return '';
-    return new Date(isoDate).toISOString().slice(0, 16);
+function añadirEtapa() {
+    const container = document.getElementById('etapas-container');
+    const index = etapasCounter++;
+
+    const albergueOpciones = modalAlbergues
+        .map(a => `<option value="${a.nombre} - ${a.ciudad}">`)
+        .join('');
+
+    const etapaHTML = `
+        <div class="etapa-item" data-index="${index}" style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;background:#fff;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <span style="font-size:13px;font-weight:700;color:#374151;">Etapa ${index + 1}</span>
+                <button type="button" class="btn-remove-etapa" data-index="${index}" style="display:flex;align-items:center;justify-content:center;height:28px;width:28px;border:none;background:#fee2e2;color:#b91c1c;border-radius:6px;cursor:pointer;transition:all 0.2s;">
+                    <span class="material-symbols-outlined" style="font-size:18px;">close</span>
+                </button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;margin-bottom:8px;">
+                <div>
+                    <label style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:4px;">Fecha</label>
+                    <input type="date" class="etapa-fecha" data-index="${index}" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #e5e7eb;font-size:13px;color:#1f2937;outline:none;">
+                </div>
+                <div>
+                    <label style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:4px;">Cantidad Mochilas</label>
+                    <input type="number" class="etapa-cantidad" data-index="${index}" min="1" value="1" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #e5e7eb;font-size:13px;color:#1f2937;outline:none;">
+                </div>
+                <div>
+                    <label style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:4px;">Precio €</label>
+                    <input type="number" class="etapa-precio" data-index="${index}" value="6.00" step="0.01" min="0" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #e5e7eb;font-size:13px;color:#1f2937;outline:none;">
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+                <div>
+                    <label style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:4px;">Alojamiento Salida *</label>
+                    <input list="albergues-list-${index}-salida" class="etapa-salida" data-index="${index}" placeholder="Escribe o selecciona" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #e5e7eb;font-size:13px;color:#1f2937;outline:none;">
+                    <datalist id="albergues-list-${index}-salida">
+                        ${albergueOpciones}
+                    </datalist>
+                </div>
+                <div>
+                    <label style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:4px;">Alojamiento Destino *</label>
+                    <input list="albergues-list-${index}-destino" class="etapa-destino" data-index="${index}" placeholder="Escribe o selecciona" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #e5e7eb;font-size:13px;color:#1f2937;outline:none;">
+                    <datalist id="albergues-list-${index}-destino">
+                        ${albergueOpciones}
+                    </datalist>
+                </div>
+            </div>
+            <div>
+                <label style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:4px;">Comentarios</label>
+                <input type="text" class="etapa-comentarios" data-index="${index}" placeholder="Comentarios opcionales" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid #e5e7eb;font-size:13px;color:#1f2937;outline:none;">
+            </div>
+        </div>
+    `;
+
+    container.insertAdjacentHTML('beforeend', etapaHTML);
+
+    // Eventos de la etapa recién añadida
+    const etapaElem = container.querySelector(`.etapa-item[data-index="${index}"]`);
+
+    // Autocompletar origen siguiente = destino anterior
+    const inputDestino = etapaElem.querySelector('.etapa-destino');
+    inputDestino.addEventListener('change', () => autocompletarSiguienteOrigen(index));
+
+    // Calcular precio al cambiar cantidad o precio
+    const inputCantidad = etapaElem.querySelector('.etapa-cantidad');
+    const inputPrecio = etapaElem.querySelector('.etapa-precio');
+
+    inputCantidad.addEventListener('input', () => calcularPrecioTotal());
+    inputPrecio.addEventListener('input', () => calcularPrecioTotal());
+
+    // Eliminar etapa
+    const btnEliminar = etapaElem.querySelector('.btn-remove-etapa');
+    btnEliminar.addEventListener('click', () => eliminarEtapa(index));
+
+    // Calcular precio inicial
+    calcularPrecioTotal();
+    renumerarEtapas();
 }
 
-// ─── Submit modal crear/editar ───────────────────────────────────────────────
-async function handleModalSubmit(modo, reservaEditar) {
-    const clienteId   = document.getElementById('modal-cliente')?.value;
-    const fecha       = document.getElementById('modal-fecha')?.value;
-    const origen      = document.getElementById('modal-origen')?.value.trim();
-    const destino     = document.getElementById('modal-destino')?.value.trim();
-    const pasajeros   = document.getElementById('modal-pasajeros')?.value;
-    const precio      = document.getElementById('modal-precio')?.value;
-    const necesidades = document.getElementById('modal-necesidades')?.value.trim();
+function eliminarEtapa(index) {
+    const etapa = document.querySelector(`.etapa-item[data-index="${index}"]`);
+    if (etapa) {
+        etapa.remove();
+        renumerarEtapas();
+        calcularPrecioTotal();
+    }
+}
 
-    if (!clienteId || !origen || !destino) {
-        mostrarToast('Cliente, origen y destino son obligatorios.', 'error');
+function renumerarEtapas() {
+    const etapas = document.querySelectorAll('.etapa-item');
+    etapas.forEach((etapa, i) => {
+        etapa.querySelector('span').textContent = `Etapa ${i + 1}`;
+    });
+}
+
+function autocompletarSiguienteOrigen(index) {
+    const etapaActual = document.querySelector(`.etapa-item[data-index="${index}"]`);
+    const destinoValue = etapaActual.querySelector('.etapa-destino').value;
+
+    if (!destinoValue) return;
+
+    // Buscar la siguiente etapa
+    const todasEtapas = Array.from(document.querySelectorAll('.etapa-item'));
+    const indexActual = todasEtapas.indexOf(etapaActual);
+    const siguienteEtapa = todasEtapas[indexActual + 1];
+
+    if (siguienteEtapa) {
+        const inputOrigen = siguienteEtapa.querySelector('.etapa-salida');
+        inputOrigen.value = destinoValue;
+    }
+}
+
+function calcularPreciosEtapa(index) {
+    const etapa = document.querySelector(`.etapa-item[data-index="${index}"]`);
+    if (!etapa) return;
+
+    const cantidad = parseInt(etapa.querySelector('.etapa-cantidad').value) || 0;
+    const precioInput = etapa.querySelector('.etapa-precio');
+
+    // Si el usuario cambió el precio manualmente, no hacer nada
+    // Si está en el valor por defecto (6.00), recalcular
+    const precioActual = parseFloat(precioInput.value) || 6.0;
+
+    // Recalcular solo si es un cambio de cantidad
+    if (precioActual === 6.0) {
+        precioInput.value = (6.0).toFixed(2);
+    }
+
+    calcularPrecioTotal();
+}
+
+function calcularPrecioTotal() {
+    let total = 0;
+    document.querySelectorAll('.etapa-item').forEach(etapa => {
+        const cantidad = parseInt(etapa.querySelector('.etapa-cantidad').value) || 0;
+        const precio = parseFloat(etapa.querySelector('.etapa-precio').value) || 0;
+        total += cantidad * precio;
+    });
+
+    document.getElementById('precio-total-display').textContent = `€${total.toFixed(2)}`;
+}
+
+async function handleSubmitReservaCompleta() {
+    // Datos del cliente
+    const clienteEmail = document.getElementById('modal-cliente-email').value.trim();
+    const clienteTelefono = document.getElementById('modal-cliente-telefono').value.trim();
+    const clienteNombre = document.getElementById('modal-cliente-nombre').value.trim();
+    const clienteApellidos = document.getElementById('modal-cliente-apellidos').value.trim();
+
+    const agenciaNombre = document.getElementById('modal-agencia').value.trim();
+    const observaciones = document.getElementById('modal-observaciones').value.trim();
+    const estado = document.getElementById('modal-estado').value;
+
+    // Validar cliente
+    if (!clienteEmail && !clienteTelefono) {
+        mostrarToast('Debes proporcionar al menos email o teléfono del cliente.', 'error');
         return;
     }
 
-    try {
-        if (modo === 'crear') {
-            const nuevaReserva = {
-                fechaReserva: fecha ? new Date(fecha).toISOString() : new Date().toISOString(),
-                origen,
-                destino,
-                pasajeros:    pasajeros ? parseInt(pasajeros) : null,
-                precio:       precio ? parseFloat(precio) : 0,
-                necesidades:  necesidades || null,
-                estado:       'Pendiente'
-            };
+    if (!clienteNombre) {
+        mostrarToast('El nombre del cliente es obligatorio.', 'error');
+        return;
+    }
 
-            await apiCall(`${API.reservas}/cliente/${clienteId}`, {
-                method: 'POST',
-                body: JSON.stringify(nuevaReserva)
-            });
+    // Recoger etapas
+    const etapas = [];
+    const etapasItems = document.querySelectorAll('.etapa-item');
 
-            document.querySelector('.modal-overlay')?.remove();
-            mostrarToast('Reserva creada correctamente.', 'success');
-            await cargarReservas();
+    if (etapasItems.length === 0) {
+        mostrarToast('Añade al menos una etapa del Camino.', 'error');
+        return;
+    }
 
-        } else {
-            const nuevoEstado = document.getElementById('modal-estado')?.value;
+    etapasItems.forEach((etapa, i) => {
+        const fecha = etapa.querySelector('.etapa-fecha').value;
+        const salidaNombre = etapa.querySelector('.etapa-salida').value.trim();
+        const destinoNombre = etapa.querySelector('.etapa-destino').value.trim();
+        const cantidad = parseInt(etapa.querySelector('.etapa-cantidad').value) || 0;
+        const precio = parseFloat(etapa.querySelector('.etapa-precio').value) || 6.0;
+        const comentarios = etapa.querySelector('.etapa-comentarios').value.trim();
 
-            if (nuevoEstado && nuevoEstado !== reservaEditar.estado) {
-                await apiCall(`${API.reservas}/${reservaEditar.id}/estado?estado=${encodeURIComponent(nuevoEstado)}`, {
-                    method: 'PUT'
-                });
-            }
-
-            document.querySelector('.modal-overlay')?.remove();
-            mostrarToast('Reserva actualizada correctamente.', 'success');
-            await cargarReservas();
+        if (!salidaNombre || !destinoNombre) {
+            mostrarToast(`La etapa ${i + 1} necesita alojamiento de salida y destino.`, 'error');
+            throw new Error('Etapa incompleta');
         }
+
+        etapas.push({
+            fecha: fecha || null,
+            alojamientoSalidaNombre: salidaNombre,
+            alojamientoDestinoNombre: destinoNombre,
+            cantidadMochilas: cantidad,
+            precioUnitario: precio,
+            comentarios: comentarios || null,
+            orden: i + 1
+        });
+    });
+
+    // Crear DTO
+    const reservaDTO = {
+        clienteEmail: clienteEmail || null,
+        clienteTelefono: clienteTelefono || null,
+        clienteNombre: clienteNombre,
+        clienteApellidos: clienteApellidos || null,
+        agenciaNombre: agenciaNombre || null,
+        observaciones: observaciones || null,
+        estado: estado,
+        etapas: etapas
+    };
+
+    try {
+        await apiCall(`${API.reservas}/completa`, {
+            method: 'POST',
+            body: JSON.stringify(reservaDTO)
+        });
+
+        document.querySelector('.modal-overlay')?.remove();
+        mostrarToast('Reserva creada correctamente con ' + etapas.length + ' etapas.', 'success');
+        await cargarReservas();
+
+        // Recargar agencias y albergues por si se crearon nuevos
+        modalAgencias = await apiCall(API.agencias);
+        modalAlbergues = await apiCall(API.albergues);
     } catch (err) {
-        console.error('Error en modal submit:', err);
+        console.error('Error creando reserva completa:', err);
         mostrarToast(err.message, 'error');
     }
 }
 
-// ─── Modal asignar repartidor (Ruta Diaria) ─────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// MODAL ASIGNAR REPARTIDOR (Ruta Diaria)
+// ═══════════════════════════════════════════════════════════════════════════
+
 function crearModalRuta(reservaId, nombreCliente, repartidores) {
     document.querySelector('.modal-overlay')?.remove();
 
@@ -526,18 +735,13 @@ function crearModalRuta(reservaId, nombreCliente, repartidores) {
 // ─── Eventos de botones en cada fila ─────────────────────────────────────────
 function adjuntarEventosTabla() {
 
-    // EDITAR
+    // EDITAR (por ahora solo cambia estado)
     document.querySelectorAll('button[aria-label="Editar"]').forEach(btn => {
         btn.addEventListener('click', async function () {
             const reserva = reservasCache.find(r => r.id == this.dataset.id);
             if (!reserva) return;
 
-            if (modalClientes.length === 0) {
-                try { modalClientes = await apiCall(API.clientes); }
-                catch (e) { mostrarToast('No se pudieron cargar los clientes.', 'error'); return; }
-            }
-
-            crearModal('editar', reserva);
+            mostrarToast('Edición de etapas próximamente.', 'info');
         });
     });
 
@@ -610,7 +814,7 @@ function adjuntarFiltros() {
                     : desde.setMonth(ahora.getMonth() - 1);
 
                 reservasCache = todas.filter(r => {
-                    const fecha = new Date(r.fechaReserva);
+                    const fecha = new Date(r.fechaCreacion || r.fechaReserva);
                     return fecha >= desde && fecha <= ahora;
                 });
 
@@ -627,30 +831,33 @@ function adjuntarFiltros() {
 // ─── INIT ────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async function () {
 
-    // Verificar autenticación antes de hacer nada.
-    // Si no está autenticado, AuthService redirige al login automáticamente.
     if (!AuthService.isAuthenticated()) {
         window.location.href = '/html/login.html';
         return;
     }
 
-    // ✅ IMPORTANTE: Configurar el menú de logout
     configurarLogout();
+
+    // Cargar datos necesarios para el modal
+    try {
+        modalClientes = await apiCall(API.clientes);
+        modalAgencias = await apiCall(API.agencias);
+        modalAlbergues = await apiCall(API.albergues);
+    } catch (e) {
+        console.error('Error cargando datos:', e);
+        mostrarToast('Error cargando datos iniciales.', 'error');
+    }
 
     // Botón crear nueva reserva
     const createBtn = document.getElementById('createReservationBtn');
     if (createBtn) {
-        createBtn.addEventListener('click', async () => {
-            if (modalClientes.length === 0) {
-                try { modalClientes = await apiCall(API.clientes); }
-                catch (e) { mostrarToast('No se pudieron cargar los clientes.', 'error'); return; }
-            }
-            crearModal('crear');
+        createBtn.addEventListener('click', () => {
+            crearModalReservaCompleta();
         });
     }
 
     adjuntarFiltros();
     await cargarReservas();
 
-    console.log('✅ Taxicamino - Sistema de gestión de reservas conectado a la API.');
+    console.log('✅ Taxicamino - Sistema de gestión de reservas con etapas conectado.');
 });

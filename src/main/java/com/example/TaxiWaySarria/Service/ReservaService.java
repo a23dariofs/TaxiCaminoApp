@@ -1,5 +1,7 @@
 package com.example.TaxiWaySarria.Service;
 
+import com.example.TaxiWaySarria.DTOs.EtapaCaminoDTO;
+import com.example.TaxiWaySarria.DTOs.ReservaDTO;
 import com.example.TaxiWaySarria.Model.*;
 import com.example.TaxiWaySarria.Repository.*;
 import org.springframework.stereotype.Service;
@@ -20,6 +22,9 @@ public class ReservaService {
     private final RutaDetalleRepository rutaDetalleRepository;
     private final PresupuestoDetalleRepository presupuestoDetalleRepository;
     private final RepartidorRepository repartidorRepository;
+    private final AgenciaRepository agenciaRepository;
+    private final AlbergueRepository albergueRepository;
+    private final EtapaCaminoRepository etapaCaminoRepository;
 
     public ReservaService(ReservaRepository reservaRepository,
                           ClienteRepository clienteRepository,
@@ -27,7 +32,10 @@ public class ReservaService {
                           RutaDiariaRepository rutaDiariaRepository,
                           RutaDetalleRepository rutaDetalleRepository,
                           PresupuestoDetalleRepository presupuestoDetalleRepository,
-                          RepartidorRepository repartidorRepository) {
+                          RepartidorRepository repartidorRepository,
+                          AgenciaRepository agenciaRepository,
+                          AlbergueRepository albergueRepository,
+                          EtapaCaminoRepository etapaCaminoRepository) {
         this.reservaRepository = reservaRepository;
         this.clienteRepository = clienteRepository;
         this.facturaRepository = facturaRepository;
@@ -35,6 +43,9 @@ public class ReservaService {
         this.rutaDetalleRepository = rutaDetalleRepository;
         this.presupuestoDetalleRepository = presupuestoDetalleRepository;
         this.repartidorRepository = repartidorRepository;
+        this.agenciaRepository = agenciaRepository;
+        this.albergueRepository = albergueRepository;
+        this.etapaCaminoRepository = etapaCaminoRepository;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -49,13 +60,178 @@ public class ReservaService {
         return reservaRepository.findById(id);
     }
 
-    public Reserva crearReserva(Long clienteId, Reserva reserva) {
-        Cliente cliente = clienteRepository.findById(clienteId)
-                .orElseThrow(() -> new RuntimeException("Cliente no encontrado"));
+    @Transactional
+    public Reserva crearReservaCompleta(ReservaDTO reservaDTO) {
+
+        // 1️⃣ BUSCAR O CREAR CLIENTE
+        Cliente cliente = buscarOCrearCliente(
+                reservaDTO.getClienteEmail(),
+                reservaDTO.getClienteTelefono(),
+                reservaDTO.getClienteNombre(),
+                reservaDTO.getClienteApellidos()
+        );
+
+        // 2️⃣ BUSCAR O CREAR AGENCIA (si se proporcionó)
+        Agencia agencia = null;
+        if (reservaDTO.getAgenciaNombre() != null && !reservaDTO.getAgenciaNombre().trim().isEmpty()) {
+            agencia = buscarOCrearAgencia(reservaDTO.getAgenciaNombre().trim());
+        }
+
+        // 3. Crear reserva
+        Reserva reserva = new Reserva();
         reserva.setCliente(cliente);
-        reserva.setEstado("Pendiente");
-        return reservaRepository.save(reserva);
+        reserva.setAgencia(agencia);
+        reserva.setObservaciones(reservaDTO.getObservaciones());
+        reserva.setEstado(reservaDTO.getEstado() != null ? reservaDTO.getEstado() : "Pendiente");
+        reserva.setFechaCreacion(LocalDate.now());
+        reserva.setEtapas(new ArrayList<>());
+
+        // 4. Guardar reserva primero
+        reserva = reservaRepository.save(reserva);
+
+        // 5. Crear etapas
+        double precioTotal = 0.0;
+
+        if (reservaDTO.getEtapas() != null && !reservaDTO.getEtapas().isEmpty()) {
+            for (EtapaCaminoDTO etapaDTO : reservaDTO.getEtapas()) {
+
+                // 🏠 BUSCAR O CREAR ALBERGUES
+                Albergue alojamientoSalida = buscarOCrearAlbergue(etapaDTO.getAlojamientoSalidaNombre());
+                Albergue alojamientoDestino = buscarOCrearAlbergue(etapaDTO.getAlojamientoDestinoNombre());
+
+                // Crear etapa
+                EtapaCamino etapa = new EtapaCamino();
+                etapa.setReserva(reserva);
+                etapa.setFecha(etapaDTO.getFecha());
+                etapa.setAlojamientoSalida(alojamientoSalida);
+                etapa.setAlojamientoDestino(alojamientoDestino);
+                etapa.setCantidadMochilas(etapaDTO.getCantidadMochilas());
+                etapa.setPrecioUnitario(etapaDTO.getPrecioUnitario() != null ? etapaDTO.getPrecioUnitario() : 6.0);
+                etapa.setPrecioTotal(etapaDTO.getCantidadMochilas() * etapa.getPrecioUnitario());
+                etapa.setComentarios(etapaDTO.getComentarios());
+                etapa.setOrden(etapaDTO.getOrden());
+
+                // Guardar etapa
+                etapa = etapaCaminoRepository.save(etapa);
+                reserva.getEtapas().add(etapa);
+
+                // Sumar al precio total
+                precioTotal += etapa.getPrecioTotal();
+            }
+        }
+
+        // 6. Actualizar precio total
+        reserva.setPrecioTotal(precioTotal);
+        reserva = reservaRepository.save(reserva);
+
+        System.out.println("✅ Reserva completa creada:");
+        System.out.println("   - Cliente: " + cliente.getNombre() + " (ID: " + cliente.getId() + ")");
+        if (agencia != null) System.out.println("   - Agencia: " + agencia.getNombre() + " (ID: " + agencia.getId() + ")");
+        System.out.println("   - Etapas: " + reserva.getEtapas().size());
+        System.out.println("   - Precio total: €" + precioTotal);
+
+        return reserva;
     }
+
+    private Cliente buscarOCrearCliente(String email, String telefono, String nombre, String apellidos) {
+
+        Cliente cliente = null;
+
+        // 1️⃣ Buscar por email (prioridad)
+        if (email != null && !email.trim().isEmpty()) {
+            cliente = clienteRepository.findByEmail(email.trim()).orElse(null);
+            if (cliente != null) {
+                System.out.println("✅ Cliente encontrado por email: " + cliente.getNombre() + " (ID: " + cliente.getId() + ")");
+                return cliente;
+            }
+        }
+
+        // 2️⃣ Buscar por teléfono (segunda opción)
+        if (telefono != null && !telefono.trim().isEmpty()) {
+            cliente = clienteRepository.findByTelefono(telefono.trim()).orElse(null);
+            if (cliente != null) {
+                System.out.println("✅ Cliente encontrado por teléfono: " + cliente.getNombre() + " (ID: " + cliente.getId() + ")");
+                return cliente;
+            }
+        }
+
+        // 3️⃣ Si no existe, crear nuevo cliente
+        if (nombre == null || nombre.trim().isEmpty()) {
+            throw new RuntimeException("El nombre del cliente es obligatorio para crear uno nuevo");
+        }
+
+        Cliente nuevoCliente = new Cliente();
+        nuevoCliente.setNombre(nombre.trim());
+        nuevoCliente.setApellidos(apellidos != null ? apellidos.trim() : "");
+        nuevoCliente.setTelefono(telefono != null ? telefono.trim() : null);
+        nuevoCliente.setEmail(email != null ? email.trim() : null);
+
+        nuevoCliente = clienteRepository.save(nuevoCliente);
+
+        System.out.println("✅ Cliente NUEVO creado: " + nuevoCliente.getNombre() + " " + nuevoCliente.getApellidos() + " (ID: " + nuevoCliente.getId() + ")");
+
+        return nuevoCliente;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+// 🔍 BUSCAR O CREAR AGENCIA
+// ═══════════════════════════════════════════════════════════════════════════
+    private Agencia buscarOCrearAgencia(String nombre) {
+        // Buscar por nombre exacto
+        Agencia agencia = agenciaRepository.findByNombre(nombre).orElse(null);
+
+        if (agencia != null) {
+            System.out.println("✅ Agencia encontrada: " + agencia.getNombre() + " (ID: " + agencia.getId() + ")");
+            return agencia;
+        }
+
+        // Si no existe, crear nueva
+        Agencia nuevaAgencia = new Agencia();
+        nuevaAgencia.setNombre(nombre);
+        nuevaAgencia = agenciaRepository.save(nuevaAgencia);
+
+        System.out.println("✅ Agencia NUEVA creada: " + nuevaAgencia.getNombre() + " (ID: " + nuevaAgencia.getId() + ")");
+
+        return nuevaAgencia;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+// 🏠 BUSCAR O CREAR ALBERGUE
+// ═══════════════════════════════════════════════════════════════════════════
+    private Albergue buscarOCrearAlbergue(String nombreCompleto) {
+        // El nombreCompleto viene como "Nombre Albergue - Ciudad"
+        // Intentar extraer nombre y ciudad
+        String nombre;
+        String ciudad = null;
+
+        if (nombreCompleto.contains(" - ")) {
+            String[] partes = nombreCompleto.split(" - ", 2);
+            nombre = partes[0].trim();
+            ciudad = partes[1].trim();
+        } else {
+            nombre = nombreCompleto.trim();
+        }
+
+        // Buscar por nombre
+        Albergue albergue = albergueRepository.findByNombre(nombre).orElse(null);
+
+        if (albergue != null) {
+            System.out.println("✅ Albergue encontrado: " + albergue.getNombre() + " (ID: " + albergue.getId() + ")");
+            return albergue;
+        }
+
+        // Si no existe, crear nuevo
+        Albergue nuevoAlbergue = new Albergue();
+        nuevoAlbergue.setNombre(nombre);
+        nuevoAlbergue.setCiudad(ciudad);
+        nuevoAlbergue = albergueRepository.save(nuevoAlbergue);
+
+        System.out.println("✅ Albergue NUEVO creado: " + nuevoAlbergue.getNombre() + " (ID: " + nuevoAlbergue.getId() + ")");
+
+        return nuevoAlbergue;
+    }
+
+    // ... Resto de tus métodos (actualizarEstado, eliminar, buscarPorCliente, etc.) ...
 
     public Reserva actualizarEstado(Long id, String nuevoEstado) {
         Reserva reserva = reservaRepository.findById(id)
@@ -76,138 +252,61 @@ public class ReservaService {
         return reservaRepository.findByEstado(estado);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ CORREGIDO: Asignar repartidor CON validación de pago
-    // ═══════════════════════════════════════════════════════════════════════════
-
     @Transactional
     public Reserva asignarRepartidorConValidacionPago(Long reservaId, Long repartidorId) {
-        // 1️⃣ Buscar la reserva
         Reserva reserva = reservaRepository.findById(reservaId)
                 .orElseThrow(() -> new RuntimeException("Reserva no encontrada con ID: " + reservaId));
 
-        // 2️⃣ Buscar el repartidor
         Repartidor repartidor = repartidorRepository.findById(repartidorId)
                 .orElseThrow(() -> new RuntimeException("Repartidor no encontrado con ID: " + repartidorId));
 
-        // 3️⃣ ⚠️ VALIDAR QUE EL PAGO ESTÉ COMPLETADO
         boolean pagoCompletado = validarPagoCliente(reserva.getCliente().getId());
 
         if (!pagoCompletado) {
-            throw new RuntimeException(
-                    "⚠️ PAGO PENDIENTE: No se puede asignar repartidor hasta que el cliente complete el pago. " +
-                            "Por favor, verifica que la factura esté marcada como PAGADO en la sección de Pagos."
-            );
+            throw new RuntimeException("⚠️ PAGO PENDIENTE: No se puede asignar repartidor.");
         }
 
-        // 4️⃣ Asignar repartidor a la reserva
         if (reserva.getRepartidoresAsignados() == null) {
             reserva.setRepartidoresAsignados(new ArrayList<>());
         }
 
-        // Evitar duplicados
         if (!reserva.getRepartidoresAsignados().contains(repartidor)) {
             reserva.getRepartidoresAsignados().add(repartidor);
         }
 
         reservaRepository.save(reserva);
-
-        // 5️⃣ AUTO-CREAR RUTA DIARIA con albergues
         crearRutaDiariaConAlbergues(reserva, repartidor);
-
-        System.out.println("✅ Repartidor asignado y RutaDiaria creada para Reserva ID: " + reservaId);
-
         return reserva;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // 🔍 MÉTODO PRIVADO: Validar que el pago esté completado
-    // ═══════════════════════════════════════════════════════════════════════════
-
     private boolean validarPagoCliente(Long clienteId) {
-        // Buscar todas las facturas del cliente
         List<Factura> facturas = facturaRepository.findByClienteId(clienteId);
-
-        if (facturas == null || facturas.isEmpty()) {
-            System.out.println("❌ No se encontraron facturas para el cliente ID: " + clienteId);
-            return false;
-        }
-
-        // Verificar si hay al menos una factura en estado PAGADO
-        boolean tienePagoPendiente = facturas.stream()
-                .anyMatch(f -> "PAGADO".equalsIgnoreCase(f.getEstado()));
-
-        if (tienePagoPendiente) {
-            System.out.println("✅ Pago validado: Cliente tiene factura(s) en estado PAGADO");
-            return true;
-        }
-
-        // Mostrar el estado de las facturas para debugging
-        System.out.println("❌ Pago NO validado. Estados de facturas del cliente " + clienteId + ":");
-        for (Factura f : facturas) {
-            System.out.println("   - Factura ID " + f.getId() + ": Estado = " + f.getEstado());
-        }
-
-        return false;
+        if (facturas == null || facturas.isEmpty()) return false;
+        return facturas.stream().anyMatch(f -> "PAGADO".equalsIgnoreCase(f.getEstado()));
     }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // ✅ CORREGIDO: Auto-crear RutaDiaria SIN usar campos inexistentes
-    // Accede a los datos del presupuesto a través de la relación
-    // ═══════════════════════════════════════════════════════════════════════════
 
     private void crearRutaDiariaConAlbergues(Reserva reserva, Repartidor repartidor) {
         try {
-            // 1️⃣ Crear RutaDiaria
-            // ✅ SOLO campos que EXISTEN: fecha, repartidor, detalles
             RutaDiaria rutaDiaria = new RutaDiaria();
             rutaDiaria.setFecha(reserva.getFechaReserva() != null ? reserva.getFechaReserva() : LocalDate.now());
             rutaDiaria.setRepartidor(repartidor);
-
-            // ℹ️ NOTA: origen, destino, cliente, precio NO existen en RutaDiaria
-            // El repartidor puede acceder a esta info en el frontend haciendo:
-            // - reserva.presupuesto.origen
-            // - reserva.presupuesto.destino
-            // - reserva.cliente.nombre
-            // - reserva.presupuesto.precioTotal
-
             rutaDiariaRepository.save(rutaDiaria);
 
-            // 2️⃣ Verificar si la reserva tiene un presupuesto con detalles de albergues
             if (reserva.getPresupuesto() != null) {
                 List<PresupuestoDetalle> presupuestoDetalles = presupuestoDetalleRepository
                         .findByPresupuestoId(reserva.getPresupuesto().getId());
 
-                if (presupuestoDetalles != null && !presupuestoDetalles.isEmpty()) {
-                    // 3️⃣ Crear RutaDetalle por cada albergue en orden
-                    int contador = 0;
-                    for (PresupuestoDetalle presupuestoDetalle : presupuestoDetalles) {
-                        RutaDetalle rutaDetalle = new RutaDetalle();
-                        rutaDetalle.setRutaDiaria(rutaDiaria);
-                        rutaDetalle.setAlbergue(presupuestoDetalle.getAlbergue());
-                        rutaDetalle.setOrden(presupuestoDetalle.getOrden());
-                        rutaDetalleRepository.save(rutaDetalle);
-                        contador++;
+                if (presupuestoDetalles != null) {
+                    for (PresupuestoDetalle pd : presupuestoDetalles) {
+                        RutaDetalle rd = new RutaDetalle();
+                        rd.setRutaDiaria(rutaDiaria);
+                        rd.setAlbergue(pd.getAlbergue());
+                        rd.setOrden(pd.getOrden());
+                        rutaDetalleRepository.save(rd);
                     }
-
-                    System.out.println("✅ RutaDiaria ID " + rutaDiaria.getId() + " creada con " + contador + " paradas (albergues)");
-
-                    // Log de las paradas para debugging
-                    for (PresupuestoDetalle detalle : presupuestoDetalles) {
-                        System.out.println("   Parada " + detalle.getOrden() + ": " +
-                                detalle.getAlbergue().getNombre() + " (" +
-                                detalle.getAlbergue().getCiudad() + ")");
-                    }
-                } else {
-                    System.out.println("ℹ️ RutaDiaria creada sin paradas específicas (presupuesto sin detalles de albergues)");
                 }
-            } else {
-                System.out.println("ℹ️ RutaDiaria creada sin paradas específicas (reserva sin presupuesto asociado)");
             }
-
         } catch (Exception e) {
-            System.err.println("❌ Error al crear RutaDiaria: " + e.getMessage());
-            e.printStackTrace();
             throw new RuntimeException("Error al crear la ruta diaria: " + e.getMessage());
         }
     }
