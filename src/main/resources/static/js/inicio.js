@@ -11,9 +11,7 @@ tailwind.config = {
 
 // ─── BASE URLs de los controllers ───────────────────────────────────────────
 const API = {
-    rutas:       '/api/rutas-diarias',
-    detalles:    '/api/ruta-detalles',
-    repartidores:'/api/repartidores'
+    etapas: '/api/etapas'
 };
 
 // ─── Helper: usa AuthService para mandar el token automáticamente ───────────
@@ -31,36 +29,20 @@ async function apiCall(url, options = {}) {
 }
 
 // ─── Estado local ────────────────────────────────────────────────────────────
-let rutasCache = [];
-let repartidoresCache = [];
+let etapasCache = [];
 let fechaSeleccionada = new Date();
 
 // ─── Paginación ──────────────────────────────────────────────────────────────
-const ITEMS_POR_PAGINA = 4;
+const ITEMS_POR_PAGINA = 10;
 let paginaActual = 1;
 
-// ─── Colores inline para estados ─────────────────────────────────────────────
-const ESTADO_STYLES = {
-    'COMPLETADA': { bg: '#dcfce7', text: '#166534', border: '#86efac' },
-    'EN_CURSO':   { bg: '#dbeafe', text: '#1e40af', border: '#93c5fd' },
-    'PENDIENTE':  { bg: '#fed7aa', text: '#c2410c', border: '#fdba74' },
-    'CANCELADA':  { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5' },
-};
-
-function getEstadoStyle(estado) {
-    const s = ESTADO_STYLES[estado] || ESTADO_STYLES['PENDIENTE'];
-    return `background-color:${s.bg};color:${s.text};border-color:${s.border};`;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ CONFIGURACIÓN DE LOGOUT (IGUAL QUE CLIENTES.JS)
+// CONFIGURACIÓN DE LOGOUT
 // ═══════════════════════════════════════════════════════════════════════════
 
 function configurarLogout() {
-    // Buscar el botón de usuario en el header
     const userButton = document.querySelector('header button[class*="rounded-full"]');
     if (userButton) {
-        // Convertir el botón en un dropdown con opción de logout
         userButton.addEventListener('click', () => {
             mostrarMenuUsuario();
         });
@@ -68,7 +50,6 @@ function configurarLogout() {
 }
 
 function mostrarMenuUsuario() {
-    // Eliminar menú existente si hay uno
     const menuExistente = document.getElementById('userMenu');
     if (menuExistente) {
         menuExistente.remove();
@@ -93,7 +74,6 @@ function mostrarMenuUsuario() {
 
     document.body.appendChild(menu);
 
-    // Cerrar al hacer clic fuera
     setTimeout(() => {
         document.addEventListener('click', function cerrarMenu(e) {
             if (!menu.contains(e.target)) {
@@ -114,7 +94,7 @@ function inicializarFiltroFecha() {
         inputFecha.value = formatearFechaInput(fechaSeleccionada);
         inputFecha.addEventListener('change', (e) => {
             fechaSeleccionada = new Date(e.target.value + 'T00:00:00');
-            cargarRutasDelDia();
+            cargarEtapasDelDia();
         });
     }
 
@@ -127,7 +107,7 @@ function inicializarFiltroFecha() {
         fechaSeleccionada = new Date();
         const inputFecha = document.getElementById('fecha-filtro');
         if (inputFecha) inputFecha.value = formatearFechaInput(fechaSeleccionada);
-        cargarRutasDelDia();
+        cargarEtapasDelDia();
     });
     if (btnManana) btnManana.addEventListener('click', () => cambiarFecha(1));
 }
@@ -136,7 +116,7 @@ function cambiarFecha(dias) {
     fechaSeleccionada.setDate(fechaSeleccionada.getDate() + dias);
     const inputFecha = document.getElementById('fecha-filtro');
     if (inputFecha) inputFecha.value = formatearFechaInput(fechaSeleccionada);
-    cargarRutasDelDia();
+    cargarEtapasDelDia();
 }
 
 function formatearFechaInput(fecha) {
@@ -175,24 +155,38 @@ function actualizarDisplayFecha() {
     fechaDisplay.textContent = textoFecha;
 }
 
-// ─── Cargar rutas del día seleccionado ──────────────────────────────────────
-async function cargarRutasDelDia() {
+// ─── Cargar etapas del día seleccionado ─────────────────────────────────────
+async function cargarEtapasDelDia() {
     try {
         actualizarDisplayFecha();
         const fechaStr = formatearFechaInput(fechaSeleccionada);
-        rutasCache = await apiCall(`${API.rutas}/fecha/${fechaStr}`);
+        etapasCache = await apiCall(`${API.etapas}/fecha/${fechaStr}`);
+
+        console.log('📦 Etapas recibidas del backend:', etapasCache);
+
+        // Debug: Ver primera etapa en detalle
+        if (etapasCache.length > 0) {
+            console.log('🔍 Primera etapa en detalle:', {
+                id: etapasCache[0].id,
+                reserva: etapasCache[0].reserva,
+                cliente: etapasCache[0].reserva?.cliente,
+                agencia: etapasCache[0].reserva?.agencia,
+                empresa: etapasCache[0].reserva?.empresa
+            });
+        }
+
         paginaActual = 1;
         renderTabla();
         renderPaginacion();
-        actualizarEstadisticas(rutasCache);
+        actualizarEstadisticas(etapasCache);
     } catch (err) {
-        console.error('Error cargando rutas:', err);
-        mostrarToast('No se pudieron cargar las rutas.', 'error');
+        console.error('Error cargando etapas:', err);
+        mostrarToast('No se pudieron cargar las etapas.', 'error');
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// RENDERIZAR TABLA CON ALBERGUES ORDENADOS
+// RENDERIZAR TABLA CON NUEVO ORDEN DE COLUMNAS
 // ═══════════════════════════════════════════════════════════════════════════
 
 function renderTabla() {
@@ -200,115 +194,103 @@ function renderTabla() {
     if (!tbody) return;
 
     const inicio = (paginaActual - 1) * ITEMS_POR_PAGINA;
-    const pagina = rutasCache.slice(inicio, inicio + ITEMS_POR_PAGINA);
+    const pagina = etapasCache.slice(inicio, inicio + ITEMS_POR_PAGINA);
 
     tbody.innerHTML = '';
 
     if (pagina.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="6" style="padding:40px 24px;text-align:center;font-size:14px;color:#9ca3af;">
-                    No hay rutas programadas para esta fecha.
+                <td colspan="10" style="padding:40px 24px;text-align:center;font-size:14px;color:#9ca3af;">
+                    No hay etapas programadas para esta fecha.
                 </td>
             </tr>`;
         return;
     }
 
-    pagina.forEach(r => {
+    pagina.forEach(etapa => {
         const tr = document.createElement('tr');
-        tr.className = 'hover:bg-gray-50/50 transition-colors group';
-        tr.dataset.rutaId = r.id;
+        tr.className = 'hover:bg-gray-50/50 transition-colors';
+        tr.dataset.etapaId = etapa.id;
 
-        const estado = determinarEstado(r);
-        const estadoStyle = getEstadoStyle(estado);
-        const estadoTexto = estado === 'EN_CURSO' ? 'En curso' : estado === 'COMPLETADA' ? 'Finalizada' : estado === 'CANCELADA' ? 'Cancelada' : 'Pendiente';
+        // ✅ Ahora los datos vienen directamente en el DTO plano
+        const origen = etapa.origenNombre || 'No especificado';
+        const origenCiudad = etapa.origenCiudad || '';
 
-        const precio = r.precio != null ? `€${r.precio.toFixed(2)}` : '€0.00';
-        const precioCls = estado === 'CANCELADA' ? 'text-gray-400 line-through' : 'text-gray-900';
+        const destino = etapa.destinoNombre || 'No especificado';
+        const destinoCiudad = etapa.destinoCiudad || '';
 
-        const hora = extraerHora(r.fecha);
-        const cliente = r.cliente || 'Cliente no especificado';
-        const repartidor = r.repartidor?.nombre || 'Sin asignar';
+        const clienteNombre = etapa.clienteNombre || 'Sin cliente';
+        const clienteApellidos = etapa.clienteApellidos || '';
+        const nombreCompleto = `${clienteNombre} ${clienteApellidos}`.trim();
+        const clienteTelefono = etapa.clienteTelefono || '';
 
-        // GENERAR LISTA DE ALBERGUES ORDENADOS
-        let alberguesHTML = '';
-        if (r.detalles && r.detalles.length > 0) {
-            const detallesOrdenados = [...r.detalles].sort((a, b) => a.orden - b.orden);
+        const cantidadMochilas = etapa.cantidadMochilas || 0;
+        const precioTotal = etapa.precioTotal || 0;
 
-            alberguesHTML = `
-                <div style="margin-top:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">
-                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
-                        <span class="material-symbols-outlined" style="font-size:16px;color:#1773cf;">location_on</span>
-                        <span style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">
-                            ${detallesOrdenados.length} parada${detallesOrdenados.length > 1 ? 's' : ''}
-                        </span>
-                    </div>
-                    <div style="display:flex;flex-direction:column;gap:6px;">
-                        ${detallesOrdenados.map(detalle => `
-                            <div style="display:flex;align-items:center;gap:8px;">
-                                <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;background:#1773cf;color:white;border-radius:50%;font-size:11px;font-weight:700;flex-shrink:0;">
-                                    ${detalle.orden}
-                                </span>
-                                <div style="flex:1;min-width:0;">
-                                    <div style="font-size:13px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                                        ${detalle.albergue?.nombre || 'Albergue'}
-                                    </div>
-                                    <div style="font-size:11px;color:#6b7280;">
-                                        ${detalle.albergue?.ciudad || ''}, ${detalle.albergue?.provincia || ''}
-                                    </div>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>`;
-        }
+        const agencia = etapa.agenciaNombre || '-';
+        const empresa = etapa.empresaNombre || '-';
+        const observaciones = etapa.comentarios || etapa.observaciones || '-';
 
-        // BOTONES DE ESTADO dinámicos según el estado actual
-        let botonesEstado = '';
-        if (estado === 'PENDIENTE') {
-            botonesEstado = `
-                <button data-id="${r.id}" data-estado="EN_CURSO" class="btn-cambiar-estado flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-colors border border-blue-200">
-                    <span class="material-symbols-outlined text-sm">play_arrow</span> Iniciar
-                </button>`;
-        } else if (estado === 'EN_CURSO') {
-            botonesEstado = `
-                <button data-id="${r.id}" data-estado="COMPLETADA" class="btn-cambiar-estado flex items-center gap-1 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-100 transition-colors border border-green-200">
-                    <span class="material-symbols-outlined text-sm">check_circle</span> Completar
-                </button>`;
-        } else if (estado === 'COMPLETADA') {
-            botonesEstado = `
-                <span class="text-xs text-gray-400 italic">Finalizada</span>`;
-        }
+        // Estado de la etapa
+        const estado = etapa.estado || 'Pendiente';
+        const estadoClase = estado === 'Completada' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-orange-50 text-orange-700 border-orange-200';
+        const estadoIcono = estado === 'Completada' ? 'check_circle' : 'schedule';
 
         tr.innerHTML = `
-            <td class="px-6 py-5 whitespace-nowrap text-sm font-semibold text-gray-900">${hora}</td>
             <td class="px-6 py-5">
-                <div class="flex flex-col gap-0.5">
-                    <div class="text-sm font-medium text-gray-900">${r.origen || 'Origen no especificado'}</div>
-                    <div class="text-xs text-gray-400 flex items-center gap-1">
-                        <span class="material-symbols-outlined text-xs">south</span> ${r.destino || 'Destino no especificado'}
-                    </div>
-                    ${alberguesHTML}
+                <div class="flex flex-col">
+                    <span class="text-sm font-semibold text-gray-900">${origen}</span>
+                    ${origenCiudad ? `<span class="text-xs text-gray-500">${origenCiudad}</span>` : ''}
                 </div>
             </td>
             <td class="px-6 py-5">
                 <div class="flex flex-col">
-                    <span class="text-sm font-medium text-gray-900">${cliente}</span>
-                    <span class="text-xs text-gray-500 italic">${repartidor}</span>
+                    <span class="text-sm font-medium text-gray-900">${nombreCompleto}</span>
+                    ${clienteTelefono ? `<span class="text-xs text-gray-500">${clienteTelefono}</span>` : ''}
                 </div>
             </td>
-            <td class="px-6 py-5 text-right whitespace-nowrap text-sm font-bold ${precioCls}">${precio}</td>
-            <td class="px-6 py-5 whitespace-nowrap">
-                <span style="display:inline-flex;align-items:center;padding:4px 10px;border-radius:9999px;font-size:12px;font-weight:600;border:1px solid;${estadoStyle}">
-                    ${estadoTexto}
+            <td class="px-6 py-5 text-center">
+                <span class="inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-50 text-blue-700 text-sm font-bold">
+                    ${cantidadMochilas}
+                </span>
+            </td>
+            <td class="px-6 py-5 text-right whitespace-nowrap text-sm font-bold text-gray-900">
+                €${precioTotal.toFixed(2)}
+            </td>
+            <td class="px-6 py-5">
+                <div class="flex flex-col">
+                    <span class="text-sm font-semibold text-gray-900">${destino}</span>
+                    ${destinoCiudad ? `<span class="text-xs text-gray-500">${destinoCiudad}</span>` : ''}
+                </div>
+            </td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">
+                ${agencia}
+            </td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">
+                ${empresa}
+            </td>
+            <td class="px-6 py-5">
+                <span class="text-sm text-gray-600 line-clamp-2" title="${observaciones}">
+                    ${observaciones}
                 </span>
             </td>
             <td class="px-6 py-5 whitespace-nowrap">
-                <div class="flex items-center gap-3 flex-wrap">
-                    ${botonesEstado}
-                    <button aria-label="Editar" data-id="${r.id}" class="text-primary hover:text-blue-800 text-sm font-semibold flex items-center gap-1 transition-colors">
-                        <span class="material-symbols-outlined text-base">edit</span>
+                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${estadoClase}">
+                    <span class="material-symbols-outlined" style="font-size:14px;">${estadoIcono}</span>
+                    ${estado}
+                </span>
+            </td>
+            <td class="px-6 py-5 whitespace-nowrap">
+                <div class="flex items-center gap-2">
+                    ${estado !== 'Completada' ? `
+                    <button aria-label="Marcar como completada" data-id="${etapa.id}" class="btn-completar flex items-center gap-1 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-100 transition-colors border border-green-200">
+                        <span class="material-symbols-outlined text-sm">check_circle</span>
+                        Completar
                     </button>
+                    ` : `
+                    <span class="text-xs text-gray-400 italic">Completada</span>
+                    `}
                 </div>
             </td>`;
 
@@ -318,37 +300,12 @@ function renderTabla() {
     adjuntarEventosTabla();
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CAMBIAR ESTADO DE RUTA
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function cambiarEstadoRuta(rutaId, nuevoEstado) {
-    const textoEstado = nuevoEstado === 'EN_CURSO' ? 'En curso' : nuevoEstado === 'COMPLETADA' ? 'Completada' : nuevoEstado;
-
-    if (!confirm(`¿Cambiar el estado de esta ruta a "${textoEstado}"?`)) {
-        return;
-    }
-
-    try {
-        await apiCall(`${API.rutas}/${rutaId}/estado`, {
-            method: 'PUT',
-            body: JSON.stringify({ estado: nuevoEstado })
-        });
-
-        mostrarToast(`Estado actualizado a ${textoEstado}`, 'success');
-        await cargarRutasDelDia();
-    } catch (err) {
-        console.error('Error cambiando estado:', err);
-        mostrarToast('Error al cambiar el estado: ' + err.message, 'error');
-    }
-}
-
-// ─── Paginación y demás funciones (sin cambios) ─────────────────────────────
+// ─── Paginación ──────────────────────────────────────────────────────────────
 function renderPaginacion() {
     const contenedor = document.querySelector('.flex.items-center.gap-1');
     if (!contenedor) return;
 
-    const totalPaginas = Math.ceil(rutasCache.length / ITEMS_POR_PAGINA);
+    const totalPaginas = Math.ceil(etapasCache.length / ITEMS_POR_PAGINA);
 
     if (totalPaginas <= 1) {
         contenedor.style.display = 'none';
@@ -405,34 +362,22 @@ function getPaginasVisibles(actual, total) {
     return paginas;
 }
 
-function actualizarEstadisticas(rutas) {
-    const total = rutas.length;
-    const completadas = rutas.filter(r => determinarEstado(r) === 'COMPLETADA').length;
-    const pendientes = rutas.filter(r => determinarEstado(r) === 'PENDIENTE').length;
+// ─── Actualizar estadísticas ─────────────────────────────────────────────────
+function actualizarEstadisticas(etapas) {
+    const total = etapas.length;
+    const totalMochilas = etapas.reduce((sum, e) => sum + (e.cantidadMochilas || 0), 0);
+    const totalIngresos = etapas.reduce((sum, e) => sum + (e.precioTotal || 0), 0);
 
-    const statsCards = document.querySelectorAll('.grid.grid-cols-1 .text-3xl');
-    if (statsCards.length >= 3) {
-        statsCards[0].textContent = total;
-        statsCards[1].textContent = completadas;
-        statsCards[2].textContent = pendientes;
-    }
+    const totalElem = document.getElementById('total-etapas');
+    const mochilasElem = document.getElementById('total-mochilas');
+    const ingresosElem = document.getElementById('total-ingresos');
+
+    if (totalElem) totalElem.textContent = total;
+    if (mochilasElem) mochilasElem.textContent = totalMochilas;
+    if (ingresosElem) ingresosElem.textContent = `€${totalIngresos.toFixed(2)}`;
 }
 
-function determinarEstado(ruta) {
-    if (ruta.estado) return ruta.estado.toUpperCase();
-    if (ruta.completada) return 'COMPLETADA';
-    if (ruta.cancelada) return 'CANCELADA';
-    if (ruta.enCurso) return 'EN_CURSO';
-    return 'PENDIENTE';
-}
-
-function extraerHora(isoDate) {
-    if (!isoDate) return '--:--';
-    const d = new Date(isoDate);
-    const pad = n => String(n).padStart(2, '0');
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
+// ─── Toast ───────────────────────────────────────────────────────────────────
 function mostrarToast(msg, tipo = 'error') {
     document.querySelector('.toast-notif')?.remove();
 
@@ -468,226 +413,50 @@ function mostrarToast(msg, tipo = 'error') {
     }, 3000);
 }
 
-// ─── Modal y funciones auxiliares (código completo del modal) ───────────────
-function crearModal(modo, rutaEditar = null) {
-    document.querySelector('.modal-overlay')?.remove();
-
-    const estadoOpciones = ['PENDIENTE', 'EN_CURSO', 'COMPLETADA', 'CANCELADA']
-        .map(e => {
-            let selected = '';
-            if (modo === 'editar' && determinarEstado(rutaEditar) === e) selected = 'selected';
-            if (modo === 'crear' && e === 'PENDIENTE') selected = 'selected';
-            const texto = e === 'EN_CURSO' ? 'En curso' : e === 'COMPLETADA' ? 'Finalizada' : e === 'CANCELADA' ? 'Cancelada' : 'Pendiente';
-            return `<option value="${e}" ${selected}>${texto}</option>`;
-        })
-        .join('');
-
-    const repartidorOpciones = repartidoresCache
-        .map(r => {
-            const selected = rutaEditar?.repartidor?.id === r.id ? 'selected' : '';
-            return `<option value="${r.id}" ${selected}>${r.nombre}</option>`;
-        })
-        .join('');
-
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:50;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease forwards;';
-
-    overlay.innerHTML = `
-        <div style="background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.15);width:100%;max-width:520px;margin:0 16px;overflow:hidden;animation:modalIn 0.25s ease forwards;">
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #f3f4f6;">
-                <h3 style="font-size:18px;font-weight:700;color:#111827;">${modo === 'crear' ? 'Nueva Ruta' : 'Editar Ruta'}</h3>
-                <button class="modal-close" style="display:flex;height:32px;width:32px;align-items:center;justify-content:center;border-radius:8px;border:none;background:transparent;color:#9ca3af;cursor:pointer;">
-                    <span class="material-symbols-outlined" style="font-size:20px;">close</span>
-                </button>
-            </div>
-
-            <div style="padding:20px 24px;display:flex;flex-direction:column;gap:16px;max-height:65vh;overflow-y:auto;">
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Fecha y Hora</label>
-                    <input type="datetime-local" id="modal-fecha"
-                        value="${rutaEditar ? formatDatetimeLocal(rutaEditar.fecha) : ''}"
-                        style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
-                </div>
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Origen</label>
-                    <input type="text" id="modal-origen" placeholder="Ej. Aeropuerto T4"
-                        value="${rutaEditar?.origen || ''}"
-                        style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
-                </div>
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Destino</label>
-                    <input type="text" id="modal-destino" placeholder="Ej. Hotel Ritz"
-                        value="${rutaEditar?.destino || ''}"
-                        style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
-                </div>
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Cliente</label>
-                    <input type="text" id="modal-cliente" placeholder="Nombre del cliente"
-                        value="${rutaEditar?.cliente || ''}"
-                        style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
-                </div>
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Repartidor</label>
-                    <select id="modal-repartidor" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
-                        <option value="">Sin asignar</option>
-                        ${repartidorOpciones}
-                    </select>
-                </div>
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Precio (€)</label>
-                    <input type="number" id="modal-precio" step="0.01" min="0" placeholder="0.00"
-                        value="${rutaEditar?.precio ?? ''}"
-                        style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
-                </div>
-                ${modo === 'editar' ? `
-                <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Estado</label>
-                    <select id="modal-estado" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
-                        ${estadoOpciones}
-                    </select>
-                </div>` : ''}
-            </div>
-
-            <div style="display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:16px 24px;border-top:1px solid #f3f4f6;background:#f9fafb;">
-                <button class="modal-close" style="padding:8px 16px;border-radius:8px;border:none;background:transparent;font-size:14px;font-weight:500;color:#4b5563;cursor:pointer;">Cancelar</button>
-                <button id="modal-submit" style="padding:8px 20px;border-radius:8px;border:none;background:#1773cf;color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.1);">
-                    ${modo === 'crear' ? 'Crear Ruta' : 'Guardar Cambios'}
-                </button>
-            </div>
-        </div>`;
-
-    document.body.appendChild(overlay);
-
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-    overlay.querySelectorAll('.modal-close').forEach(btn => btn.addEventListener('click', () => overlay.remove()));
-    overlay.querySelector('#modal-submit').addEventListener('click', () => handleModalSubmit(modo, rutaEditar));
-}
-
-function formatDatetimeLocal(isoDate) {
-    if (!isoDate) return '';
-    return new Date(isoDate).toISOString().slice(0, 16);
-}
-
-async function handleModalSubmit(modo, rutaEditar) {
-    const fecha = document.getElementById('modal-fecha')?.value;
-    const origen = document.getElementById('modal-origen')?.value.trim();
-    const destino = document.getElementById('modal-destino')?.value.trim();
-    const cliente = document.getElementById('modal-cliente')?.value.trim();
-    const repartidorId = document.getElementById('modal-repartidor')?.value;
-    const precio = document.getElementById('modal-precio')?.value;
-
-    if (!origen || !destino) {
-        mostrarToast('Origen y destino son obligatorios.', 'error');
-        return;
-    }
-
-    try {
-        if (modo === 'crear') {
-            const nuevaRuta = {
-                fecha: fecha ? new Date(fecha).toISOString() : new Date().toISOString(),
-                origen,
-                destino,
-                cliente: cliente || null,
-                repartidor: repartidorId ? { id: parseInt(repartidorId) } : null,
-                precio: precio ? parseFloat(precio) : 0,
-                estado: 'PENDIENTE'
-            };
-
-            await apiCall(API.rutas, {
-                method: 'POST',
-                body: JSON.stringify(nuevaRuta)
-            });
-
-            document.querySelector('.modal-overlay')?.remove();
-            mostrarToast('Ruta creada correctamente.', 'success');
-            await cargarRutasDelDia();
-
-        } else {
-            const rutaActualizada = {
-                ...rutaEditar,
-                fecha: fecha ? new Date(fecha).toISOString() : rutaEditar.fecha,
-                origen,
-                destino,
-                cliente,
-                repartidor: repartidorId ? { id: parseInt(repartidorId) } : null,
-                precio: precio ? parseFloat(precio) : 0,
-                estado: document.getElementById('modal-estado')?.value || rutaEditar.estado
-            };
-
-            await apiCall(`${API.rutas}/${rutaEditar.id}`, {
-                method: 'PUT',
-                body: JSON.stringify(rutaActualizada)
-            });
-
-            document.querySelector('.modal-overlay')?.remove();
-            mostrarToast('Ruta actualizada correctamente.', 'success');
-            await cargarRutasDelDia();
-        }
-    } catch (err) {
-        console.error('Error en modal submit:', err);
-        mostrarToast(err.message, 'error');
-    }
-}
-
+// ─── Eventos de tabla ────────────────────────────────────────────────────────
 function adjuntarEventosTabla() {
-    document.querySelectorAll('.btn-cambiar-estado').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const rutaId = parseInt(this.dataset.id);
-            const nuevoEstado = this.dataset.estado;
-            cambiarEstadoRuta(rutaId, nuevoEstado);
-        });
-    });
+    document.querySelectorAll('.btn-completar').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const etapaId = parseInt(this.dataset.id);
 
-    document.querySelectorAll('button[aria-label="Editar"]').forEach(btn => {
-        btn.addEventListener('click', async function () {
-            const ruta = rutasCache.find(r => r.id == this.dataset.id);
-            if (!ruta) return;
-
-            if (repartidoresCache.length === 0) {
-                try { repartidoresCache = await apiCall(API.repartidores); }
-                catch (e) { mostrarToast('No se pudieron cargar los repartidores.', 'error'); return; }
+            if (!confirm('¿Marcar esta etapa como completada?')) {
+                return;
             }
 
-            crearModal('editar', ruta);
+            try {
+                await apiCall(`${API.etapas}/${etapaId}/estado`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ estado: 'Completada' })
+                });
+
+                mostrarToast('Etapa marcada como completada', 'success');
+                await cargarEtapasDelDia();
+            } catch (err) {
+                console.error('Error marcando etapa como completada:', err);
+                mostrarToast('Error al completar la etapa: ' + err.message, 'error');
+            }
         });
     });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ INIT - CON VERIFICACIÓN DE AUTENTICACIÓN Y CONFIGURACIÓN DE LOGOUT
+// INIT
 // ═══════════════════════════════════════════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', async function () {
 
-    console.log('Taxicamino - Sistema de gestión de ruta diaria iniciando...');
+    console.log('Taxicamino - Ruta Diaria iniciando...');
 
-    // ✅ Verificar autenticación (igual que clientes.js)
     if (!AuthService.checkAuth()) {
-        return; // Si no está autenticado, checkAuth() redirige al login
+        return;
     }
 
-    // ✅ Mostrar información del usuario
     const userInfo = AuthService.getUserInfo();
     console.log('👤 Usuario autenticado:', userInfo);
 
-    // ✅ Configurar logout en el botón de usuario
     configurarLogout();
-
     inicializarFiltroFecha();
+    await cargarEtapasDelDia();
 
-    const createBtn = document.querySelector('button.bg-primary');
-    if (createBtn) {
-        createBtn.addEventListener('click', async () => {
-            if (repartidoresCache.length === 0) {
-                try { repartidoresCache = await apiCall(API.repartidores); }
-                catch (e) { mostrarToast('No se pudieron cargar los repartidores.', 'error'); return; }
-            }
-            crearModal('crear');
-        });
-    }
-
-    await cargarRutasDelDia();
-
-    console.log('Taxicamino - Gestión de ruta diaria cargado correctamente');
+    console.log('✅ Ruta Diaria cargada correctamente');
 });

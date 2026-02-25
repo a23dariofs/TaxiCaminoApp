@@ -1,5 +1,6 @@
 package com.example.TaxiWaySarria.Model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 
 import java.util.List;
@@ -16,6 +17,7 @@ public class Repartidor {
     private String email;
 
     @ManyToMany(mappedBy = "repartidoresAsignados")
+    @JsonIgnore
     private List<Reserva> reservas;
 
     @OneToMany(mappedBy = "repartidor")

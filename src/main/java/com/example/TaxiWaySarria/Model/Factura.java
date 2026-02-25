@@ -1,6 +1,7 @@
 package com.example.TaxiWaySarria.Model;
 
 import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 
 import java.time.LocalDate;
@@ -14,18 +15,28 @@ public class Factura {
     private Long id;
 
     private LocalDate fechaEmision;
-    private LocalDate fechaPago;  // ← AÑADIR
+    private LocalDate fechaPago;
     private Double importeTotal;
-    private String estado;        // ← AÑADIR (PENDIENTE, PAGADO, FALLIDO)
-    private String metodoPago;    // ← AÑADIR (Tarjeta, Efectivo, Transferencia, Bizum)
-    private String concepto;      // ← AÑADIR
+    private String estado;        // PENDIENTE, PAGADO, FALLIDO
+    private String metodoPago;    // Tarjeta, Efectivo, Transferencia, Bizum
+    private String concepto;
 
     @ManyToOne
     @JoinColumn(name = "cliente_id")
     private Cliente cliente;
 
+    // ✅ AÑADIR: Relación con Agencia
+    @ManyToOne
+    @JoinColumn(name = "agencia_id")
+    @JsonIgnoreProperties({"facturas", "reservas"})
+    private Agencia agencia;
+
+    // ✅ AÑADIR: Campo auxiliar para recibir el ID desde el frontend
+    @Transient
+    private Long agenciaId;
+
     @OneToMany(mappedBy = "factura", cascade = CascadeType.ALL)
-    @JsonManagedReference  // ← AÑADIR para evitar bucles infinitos
+    @JsonManagedReference
     private List<LineaFactura> lineas;
 
     public Factura() {
@@ -110,6 +121,23 @@ public class Factura {
         this.cliente = cliente;
     }
 
+    // ✅ NUEVOS: Getters y Setters para Agencia
+    public Agencia getAgencia() {
+        return agencia;
+    }
+
+    public void setAgencia(Agencia agencia) {
+        this.agencia = agencia;
+    }
+
+    public Long getAgenciaId() {
+        return agenciaId;
+    }
+
+    public void setAgenciaId(Long agenciaId) {
+        this.agenciaId = agenciaId;
+    }
+
     public List<LineaFactura> getLineas() {
         return lineas;
     }
@@ -129,6 +157,7 @@ public class Factura {
                 ", metodoPago='" + metodoPago + '\'' +
                 ", concepto='" + concepto + '\'' +
                 ", cliente=" + cliente +
+                ", agencia=" + (agencia != null ? agencia.getNombre() : "null") +
                 '}';
     }
 }

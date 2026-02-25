@@ -268,11 +268,11 @@ Excels.
 - Cambiar o da pestaña de cliente para que salga todo directamente ao crear a reserva (nombre, telefono, etc...) ✅
 - Facturar en principio quitase ✅
 - En estado poñer pagado en ruta ou pagado por transferencia, bizum para levar control de como se foi pagando a reserva e asi. ✅
-- Na tabla de ruta diaria cambiar os campos en este orden:  Origen, Cliente, Numero de equipajes, precio, destino, agencia, empresa observacions ( para comentar algo)
+   - Na tabla de ruta diaria cambiar os campos en este orden:  Origen, Cliente, Numero de equipajes, precio, destino, agencia, empresa observacions ( para comentar algo)✅
 - A empresa e quen manda o servicio.
 
-Crear un boton en la reserva que sea crear una etiqueta.
-Para tema facturas -> Buscar por agencia ou empresa -> numero de reservas de cada empresa/agencia -> un intervalo de fechas para facer buscar os servicios que se fixeron en ese tempo e poder generar a factura.
+Crear un boton en la reserva que sea crear una etiqueta. ✅
+Para tema facturas -> Buscar por agencia ou empresa -> numero de reservas de cada empresa/agencia -> un intervalo de fechas para facer buscar os servicios que se fixeron en ese tempo e poder generar a factura.✅
 A factura -> en excel mellor seguindo o modelo
 facturas de viaxe ao 10% no de mochilas ao 21% vai incluido.
 

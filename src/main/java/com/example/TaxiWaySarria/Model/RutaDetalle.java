@@ -1,5 +1,6 @@
 package com.example.TaxiWaySarria.Model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 
 @Entity
@@ -19,14 +20,20 @@ public class RutaDetalle {
     @JoinColumn(name = "albergue_id")
     private Albergue albergue;
 
+    @ManyToOne
+    @JoinColumn(name = "reserva_id")
+    @JsonIgnore
+    private Reserva reserva;
+
 
     public RutaDetalle() {
     }
 
-    public RutaDetalle(Integer orden, RutaDiaria rutaDiaria, Albergue albergue) {
+    public RutaDetalle(Integer orden, RutaDiaria rutaDiaria, Albergue albergue, Reserva reserva) {
         this.orden = orden;
         this.rutaDiaria = rutaDiaria;
         this.albergue = albergue;
+        this.reserva = reserva;
     }
 
     public Long getId() {
@@ -61,6 +68,14 @@ public class RutaDetalle {
         this.albergue = albergue;
     }
 
+    public Reserva getReserva() {
+        return reserva;
+    }
+
+    public void setReserva(Reserva reserva) {
+        this.reserva = reserva;
+    }
+
     @Override
     public String toString() {
         return "RutaDetalle{" +
@@ -68,6 +83,7 @@ public class RutaDetalle {
                 ", orden=" + orden +
                 ", rutaDiaria=" + rutaDiaria +
                 ", albergue=" + albergue +
+                ", reserva=" + reserva +
                 '}';
     }
 }

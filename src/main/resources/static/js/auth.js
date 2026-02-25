@@ -1,7 +1,7 @@
-    // ============================================
-// SERVICIO DE AUTENTICACIÓN JWT
 // ============================================
-const API_BASE_URL = 'http://localhost:8080/api'; // Ajusta el puerto según tu configuración
+// SERVICIO DE AUTENTICACIÓN JWT - CORREGIDO
+// ============================================
+const API_BASE_URL = 'http://localhost:8080/api';
 
 const AuthService = {
     // ============================================
@@ -12,7 +12,10 @@ const AuthService = {
      * Obtener el token JWT del almacenamiento
      */
     getToken() {
-        return localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+        // Soportar AMBOS nombres: jwt_token (nuevo) y authToken (antiguo)
+        return localStorage.getItem('jwt_token') ||
+               localStorage.getItem('authToken') ||
+               sessionStorage.getItem('authToken');
     },
 
     /**
@@ -22,10 +25,12 @@ const AuthService = {
      */
     setToken(token, remember = false) {
         if (remember) {
-            localStorage.setItem('authToken', token);
+            localStorage.setItem('jwt_token', token);
+            localStorage.setItem('authToken', token); // Compatibilidad
             sessionStorage.removeItem('authToken');
         } else {
             sessionStorage.setItem('authToken', token);
+            localStorage.setItem('jwt_token', token); // Para mantener compatibilidad
             localStorage.removeItem('authToken');
         }
     },
@@ -34,10 +39,12 @@ const AuthService = {
      * Eliminar el token (logout)
      */
     removeToken() {
+        localStorage.removeItem('jwt_token');
         localStorage.removeItem('authToken');
         sessionStorage.removeItem('authToken');
         localStorage.removeItem('username');
         localStorage.removeItem('userRole');
+        localStorage.removeItem('user_info');
     },
 
     /**
@@ -146,6 +153,7 @@ const AuthService = {
                 if (userInfo) {
                     localStorage.setItem('username', userInfo.username);
                     localStorage.setItem('userRole', userInfo.role);
+                    localStorage.setItem('user_info', JSON.stringify(userInfo));
                 }
 
                 console.log('✅ Login exitoso:', userInfo);
@@ -196,7 +204,6 @@ const AuthService = {
     logout() {
         this.removeToken();
         console.log('✅ Sesión cerrada');
-        // Redirigir al login
         window.location.href = '/login.html';
     },
 
@@ -214,18 +221,12 @@ const AuthService = {
     },
 
     /**
-     * Hacer petición autenticada
+     * Hacer petición autenticada - VERSIÓN CORREGIDA SIN LOOP
      * @param {string} url - URL del endpoint
      * @param {object} options - Opciones de fetch
      * @returns {Promise<Response>}
      */
     async authenticatedFetch(url, options = {}) {
-        // Si no está autenticado, redirigir al login
-        if (!this.isAuthenticated()) {
-            this.logout();
-            throw new Error('Sesión expirada');
-        }
-
         // Agregar headers de autenticación
         options.headers = {
             ...this.getAuthHeaders(),
@@ -236,14 +237,17 @@ const AuthService = {
             const response = await fetch(url, options);
 
             // Si es 401 o 403, la sesión expiró
+            // PERO NO REDIRIGIR AQUÍ - dejar que lo maneje el código que llama
             if (response.status === 401 || response.status === 403) {
-                console.error('⚠️ Token inválido o expirado');
-                this.logout();
-                throw new Error('Sesión expirada. Por favor, inicia sesión nuevamente.');
+                console.error('⚠️ Token inválido o expirado (401/403)');
+                // NO llamar a logout() aquí para evitar loop infinito
+                // Solo lanzar el error
+                throw new Error('Sesión expirada');
             }
 
             return response;
         } catch (error) {
+            // NO redirigir aquí tampoco
             console.error('❌ Error en petición autenticada:', error);
             throw error;
         }
@@ -266,53 +270,46 @@ const AuthService = {
 };
 
 // ============================================
-// INICIALIZACIÓN GLOBAL
+// INICIALIZACIÓN GLOBAL - VERSIÓN MEJORADA
 // ============================================
 
-// Verificar autenticación al cargar cualquier página
-// (excepto login y páginas públicas)
-document.addEventListener('DOMContentLoaded', () => {
-    const currentPage = window.location.pathname;
-    const publicPages = ['/login.html', '/register.html', '/index.html', '/'];
-
-    // Si no es una página pública, verificar autenticación
-    if (!publicPages.includes(currentPage)) {
-        // Dar tiempo para que se cargue el DOM
-        setTimeout(() => {
-            if (typeof AuthService !== 'undefined') {
-                const isAuth = AuthService.isAuthenticated();
-                console.log('🔐 Estado de autenticación:', isAuth ? 'Autenticado' : 'No autenticado');
-
-                if (!isAuth && !publicPages.some(page => currentPage.includes(page))) {
-                    console.log('⚠️ Redirigiendo al login...');
-                    // AuthService.logout(); // Descomenta si quieres redirigir automáticamente
-                }
-            }
-        }, 100);
-    }
-});
+// NO hacer verificación automática en DOMContentLoaded para evitar loops
+// Cada página debe llamar manualmente a AuthService.checkAuth() si lo necesita
 
 // Manejar expiración del token
-setInterval(() => {
-    if (AuthService.isAuthenticated()) {
-        const userInfo = AuthService.getUserInfo();
-        if (userInfo) {
-            const timeUntilExpiry = (userInfo.exp * 1000) - Date.now();
+let expiryCheckInterval = null;
 
-            // Si quedan menos de 5 minutos, avisar
-            if (timeUntilExpiry < 5 * 60 * 1000 && timeUntilExpiry > 0) {
-                console.warn('⚠️ Tu sesión expirará pronto');
-                // Aquí puedes mostrar una notificación al usuario
-            }
+function startExpiryCheck() {
+    // Limpiar intervalo anterior si existe
+    if (expiryCheckInterval) {
+        clearInterval(expiryCheckInterval);
+    }
 
-            // Si ya expiró, cerrar sesión
-            if (timeUntilExpiry <= 0) {
-                console.error('❌ Sesión expirada');
-                AuthService.logout();
+    expiryCheckInterval = setInterval(() => {
+        if (AuthService.isAuthenticated()) {
+            const userInfo = AuthService.getUserInfo();
+            if (userInfo) {
+                const timeUntilExpiry = (userInfo.exp * 1000) - Date.now();
+
+                // Si quedan menos de 5 minutos, avisar
+                if (timeUntilExpiry < 5 * 60 * 1000 && timeUntilExpiry > 0) {
+                    console.warn('⚠️ Tu sesión expirará pronto');
+                }
+
+                // Si ya expiró, cerrar sesión
+                if (timeUntilExpiry <= 0) {
+                    console.error('❌ Sesión expirada');
+                    AuthService.logout();
+                }
             }
         }
-    }
-}, 60000); // Verificar cada minuto
+    }, 60000); // Verificar cada minuto
+}
+
+// Iniciar verificación de expiración cuando se carga la página
+document.addEventListener('DOMContentLoaded', () => {
+    startExpiryCheck();
+});
 
 // Exponer globalmente
 window.AuthService = AuthService;

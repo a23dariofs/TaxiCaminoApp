@@ -11,4 +11,5 @@ public interface AlbergueRepository extends JpaRepository<Albergue, Long> {
     List<Albergue> findByProvincia(String provincia);
     Optional<Albergue> findByNombre(String nombre);
     List<Albergue> findByNombreContainingIgnoreCase(String nombre);
+    Optional<Albergue> findByNombreAndCiudad(String nombre, String ciudad);
 }

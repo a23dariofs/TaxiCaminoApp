@@ -2,6 +2,7 @@ package com.example.TaxiWaySarria.Repository;
 
 import com.example.TaxiWaySarria.Model.RutaDiaria;
 import com.example.TaxiWaySarria.Model.Repartidor;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -9,7 +10,14 @@ import java.time.LocalDate;
 import java.util.List;
 
 public interface RutaDiariaRepository extends JpaRepository<RutaDiaria, Long> {
-    List<RutaDiaria> findByFecha(LocalDate fecha);
+    @EntityGraph(attributePaths = {
+            "detalles",
+            "detalles.albergue",
+            "detalles.reserva",
+            "detalles.reserva.cliente",
+            "detalles.reserva.agencia",
+            "detalles.reserva.empresa"
+    })
 
     List<RutaDiaria> findByRepartidorId(Long repartidorId);
 
@@ -24,6 +32,8 @@ public interface RutaDiariaRepository extends JpaRepository<RutaDiaria, Long> {
 
     // Buscar rutas por repartidor y estado
     List<RutaDiaria> findByRepartidorAndEstado(Repartidor repartidor, String estado);
+
+    List<RutaDiaria> findByFecha(LocalDate fecha);
 }
 
 

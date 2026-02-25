@@ -1,6 +1,6 @@
 package com.example.TaxiWaySarria.Model;
 
-import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.LocalDate;
 
@@ -12,56 +12,43 @@ public class EtapaCamino {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
-    @JoinColumn(name = "reserva_id", nullable = false)
-    @JsonBackReference  // Evita recursión infinita en JSON
+    // ✅ CRÍTICO: fetch = FetchType.EAGER para cargar la reserva
+    // ✅ NO USES @JsonBackReference aquí
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "reserva_id")
+    @JsonIgnore
     private Reserva reserva;
 
     private LocalDate fecha;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "alojamiento_salida_id")
     private Albergue alojamientoSalida;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "alojamiento_destino_id")
     private Albergue alojamientoDestino;
 
     private Integer cantidadMochilas;
 
-    private Double precioUnitario;  // Default 6.0€
+    @Column(name = "precio_unitario")
+    private Double precioUnitario;
 
-    private Double precioTotal;  // cantidadMochilas × precioUnitario
-// "Facturar 1", "Facturar 2", etc.
+    @Column(name = "precio_total")
+    private Double precioTotal;
 
-    @Column(columnDefinition = "TEXT")
     private String comentarios;
+    private Integer orden;
 
-    private Integer orden;  // Para mantener el orden de las etapas
+    @Column(name = "estado")
+    private String estado = "Pendiente";
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // CONSTRUCTORES
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public EtapaCamino() {
     }
 
-    public EtapaCamino(Reserva reserva, LocalDate fecha, Albergue alojamientoSalida,
-                       Albergue alojamientoDestino, Integer cantidadMochilas,
-                       Double precioUnitario, Integer orden) {
-        this.reserva = reserva;
-        this.fecha = fecha;
-        this.alojamientoSalida = alojamientoSalida;
-        this.alojamientoDestino = alojamientoDestino;
-        this.cantidadMochilas = cantidadMochilas;
-        this.precioUnitario = precioUnitario;
-        this.precioTotal = cantidadMochilas * precioUnitario;
-        this.orden = orden;
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
     // GETTERS Y SETTERS
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public Long getId() {
         return id;
@@ -127,7 +114,6 @@ public class EtapaCamino {
         this.precioTotal = precioTotal;
     }
 
-
     public String getComentarios() {
         return comentarios;
     }
@@ -142,5 +128,30 @@ public class EtapaCamino {
 
     public void setOrden(Integer orden) {
         this.orden = orden;
+    }
+
+    public String getEstado() {
+        return estado;
+    }
+
+    public void setEstado(String estado) {
+        this.estado = estado;
+    }
+
+    @Override
+    public String toString() {
+        return "EtapaCamino{" +
+                "id=" + id +
+                ", reserva=" + reserva +
+                ", fecha=" + fecha +
+                ", alojamientoSalida=" + alojamientoSalida +
+                ", alojamientoDestino=" + alojamientoDestino +
+                ", cantidadMochilas=" + cantidadMochilas +
+                ", precioUnitario=" + precioUnitario +
+                ", precioTotal=" + precioTotal +
+                ", comentarios='" + comentarios + '\'' +
+                ", orden=" + orden +
+                ", estado='" + estado + '\'' +
+                '}';
     }
 }

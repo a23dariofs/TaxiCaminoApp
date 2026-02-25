@@ -12,11 +12,12 @@ tailwind.config = {
 
 // ─── BASE URLs de los controllers ───────────────────────────────────────────
 const API = {
-    clientes:     '/api/clientes',
-    reservas:     '/api/reservas',
-    repartidores: '/api/repartidores',
-    agencias:     '/api/agencias',
-    albergues:    '/api/albergues'
+    clientes: '/api/clientes',
+    reservas: '/api/reservas',
+    agencias: '/api/agencias',
+    albergues: '/api/albergues',
+    empresas: '/api/empresas',
+    repartidores: '/api/repartidores'
 };
 
 // ─── Helper: usa AuthService para mandar el token automáticamente ───────────
@@ -36,6 +37,8 @@ let reservasCache = [];
 let modalClientes = [];
 let modalAgencias = [];
 let modalAlbergues = [];
+let modalEmpresas = [];
+let modalRepartidores = [];
 
 // ─── Paginación ──────────────────────────────────────────────────────────────
 const ITEMS_POR_PAGINA = 4;
@@ -44,14 +47,14 @@ let paginaActual = 1;
 // ─── Colores inline para estados ─────────────────────────────────────────────
 const ESTADO_STYLES = {
     'Pendiente':  { bg: '#fffbeb', text: '#b45309', border: '#fcd34d' },
-    'Confirmada': { bg: '#f0fdf4', text: '#15803d', border: '#bbf7d0' },
-    'En curso':   { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' },
-    'Completada': { bg: '#f9fafb', text: '#374151', border: '#e5e7eb' },
+    'Pagado en ruta': { bg: '#f0fdf4', text: '#15803d', border: '#bbf7d0' },
+    'Bizum': { bg: '#dbeafe', text: '#1e40af', border: '#93c5fd' },
+    'Pagado por transferencia': { bg: '#dcfce7', text: '#166534', border: '#86efac' },
     'Cancelada':  { bg: '#fef2f2', text: '#b91c1c', border: '#fecaca' },
 };
 
 function getEstadoStyle(estado) {
-    const s = ESTADO_STYLES[estado] || ESTADO_STYLES['Completada'];
+    const s = ESTADO_STYLES[estado] || ESTADO_STYLES['Pendiente'];
     return `background-color:${s.bg};color:${s.text};border-color:${s.border};`;
 }
 
@@ -164,10 +167,15 @@ function renderTabla() {
             <button aria-label="Cancelar" data-id="${r.id}"
                 class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors">
                 <span class="material-symbols-outlined text-base">cancel</span>
-            </button>
-            <button aria-label="Pasar a Ruta Diaria" data-id="${r.id}"
-                class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">
-                <span class="material-symbols-outlined text-base">route</span>
+            </button>`;
+        }
+
+        // Botón generar etiquetas (siempre visible si hay etapas)
+        if (r.etapas && r.etapas.length > 0) {
+            botones += `
+            <button aria-label="Generar Etiquetas" data-id="${r.id}" title="Generar etiquetas PDF"
+                class="etiquetas-btn flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-purple-50 hover:text-purple-600 transition-colors">
+                <span class="material-symbols-outlined text-base">local_offer</span>
             </button>`;
         }
 
@@ -323,12 +331,16 @@ function crearModalReservaCompleta() {
 
     etapasCounter = 0;
 
-    const clienteOpciones = modalClientes
-        .map(c => `<option value="${c.id}">${c.nombre}</option>`)
-        .join('');
-
     const agenciaOpciones = modalAgencias
         .map(a => `<option value="${a.nombre}">`)
+        .join('');
+
+    const empresaOpciones = modalEmpresas
+        .map(e => `<option value="${e.nombre}">`)
+        .join('');
+
+    const repartidorOpciones = modalRepartidores
+        .map(r => `<option value="${r.id}">${r.nombre}</option>`)
         .join('');
 
     const overlay = document.createElement('div');
@@ -356,7 +368,6 @@ function crearModalReservaCompleta() {
                         <div>
                             <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Email *</label>
                             <input type="email" id="modal-cliente-email" placeholder="email@ejemplo.com" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;">
-                            <span id="cliente-encontrado-msg" style="display:none;font-size:11px;color:#15803d;margin-top:4px;">✓ Cliente encontrado</span>
                         </div>
                         <div>
                             <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Teléfono *</label>
@@ -381,6 +392,20 @@ function crearModalReservaCompleta() {
                         <datalist id="agencias-list">
                             ${agenciaOpciones}
                         </datalist>
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Empresa</label>
+                        <input list="empresas-list" id="modal-empresa" placeholder="Escribe o selecciona empresa" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;">
+                        <datalist id="empresas-list">
+                            ${empresaOpciones}
+                        </datalist>
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Repartidor</label>
+                        <select id="modal-repartidor" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
+                            <option value="">Sin asignar</option>
+                            ${repartidorOpciones}
+                        </select>
                     </div>
                     <div>
                         <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Estado</label>
@@ -553,25 +578,6 @@ function autocompletarSiguienteOrigen(index) {
     }
 }
 
-function calcularPreciosEtapa(index) {
-    const etapa = document.querySelector(`.etapa-item[data-index="${index}"]`);
-    if (!etapa) return;
-
-    const cantidad = parseInt(etapa.querySelector('.etapa-cantidad').value) || 0;
-    const precioInput = etapa.querySelector('.etapa-precio');
-
-    // Si el usuario cambió el precio manualmente, no hacer nada
-    // Si está en el valor por defecto (6.00), recalcular
-    const precioActual = parseFloat(precioInput.value) || 6.0;
-
-    // Recalcular solo si es un cambio de cantidad
-    if (precioActual === 6.0) {
-        precioInput.value = (6.0).toFixed(2);
-    }
-
-    calcularPrecioTotal();
-}
-
 function calcularPrecioTotal() {
     let total = 0;
     document.querySelectorAll('.etapa-item').forEach(etapa => {
@@ -591,6 +597,8 @@ async function handleSubmitReservaCompleta() {
     const clienteApellidos = document.getElementById('modal-cliente-apellidos').value.trim();
 
     const agenciaNombre = document.getElementById('modal-agencia').value.trim();
+    const empresaNombre = document.getElementById('modal-empresa').value.trim();
+    const repartidorId = document.getElementById('modal-repartidor').value;
     const observaciones = document.getElementById('modal-observaciones').value.trim();
     const estado = document.getElementById('modal-estado').value;
 
@@ -645,6 +653,8 @@ async function handleSubmitReservaCompleta() {
         clienteNombre: clienteNombre,
         clienteApellidos: clienteApellidos || null,
         agenciaNombre: agenciaNombre || null,
+        empresaNombre: empresaNombre || null,
+        repartidorId: repartidorId ? parseInt(repartidorId) : null,
         observaciones: observaciones || null,
         estado: estado,
         etapas: etapas
@@ -660,88 +670,35 @@ async function handleSubmitReservaCompleta() {
         mostrarToast('Reserva creada correctamente con ' + etapas.length + ' etapas.', 'success');
         await cargarReservas();
 
-        // Recargar agencias y albergues por si se crearon nuevos
+        // Recargar datos por si se crearon nuevos
         modalAgencias = await apiCall(API.agencias);
         modalAlbergues = await apiCall(API.albergues);
+        modalEmpresas = await apiCall(API.empresas);
     } catch (err) {
         console.error('Error creando reserva completa:', err);
         mostrarToast(err.message, 'error');
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// MODAL ASIGNAR REPARTIDOR (Ruta Diaria)
-// ═══════════════════════════════════════════════════════════════════════════
-
-function crearModalRuta(reservaId, nombreCliente, repartidores) {
-    document.querySelector('.modal-overlay')?.remove();
-
-    const opciones = repartidores
-        .map(r => `<option value="${r.id}">${r.nombre}</option>`)
-        .join('');
-
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:50;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease forwards;';
-
-    overlay.innerHTML = `
-        <div style="background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.15);width:100%;max-width:384px;margin:0 16px;overflow:hidden;animation:modalIn 0.25s ease forwards;">
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #f3f4f6;">
-                <h3 style="font-size:18px;font-weight:700;color:#111827;">Asignar a Ruta Diaria</h3>
-                <button class="modal-close" style="display:flex;height:32px;width:32px;align-items:center;justify-content:center;border-radius:8px;border:none;background:transparent;color:#9ca3af;cursor:pointer;">
-                    <span class="material-symbols-outlined" style="font-size:20px;">close</span>
-                </button>
-            </div>
-            <div style="padding:20px 24px;">
-                <p style="font-size:14px;color:#6b7280;margin-bottom:16px;">Reserva de <span style="font-weight:600;color:#1f2937;">${nombreCliente}</span></p>
-                <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Selecciona el repartidor</label>
-                <select id="modal-repartidor" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
-                    <option value="" disabled selected>Selecciona...</option>
-                    ${opciones}
-                </select>
-            </div>
-            <div style="display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:16px 24px;border-top:1px solid #f3f4f6;background:#f9fafb;">
-                <button class="modal-close" style="padding:8px 16px;border-radius:8px;border:none;background:transparent;font-size:14px;font-weight:500;color:#4b5563;cursor:pointer;">Cancelar</button>
-                <button id="modal-ruta-submit" style="padding:8px 20px;border-radius:8px;border:none;background:#1773cf;color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.1);">
-                    Asignar a Ruta
-                </button>
-            </div>
-        </div>`;
-
-    document.body.appendChild(overlay);
-
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-    overlay.querySelectorAll('.modal-close').forEach(btn => btn.addEventListener('click', () => overlay.remove()));
-
-    overlay.querySelector('#modal-ruta-submit').addEventListener('click', async () => {
-        const repartidorId = document.getElementById('modal-repartidor')?.value;
-        if (!repartidorId) {
-            mostrarToast('Selecciona un repartidor.', 'error');
-            return;
-        }
-
-        try {
-            await apiCall(`${API.repartidores}/${repartidorId}/reservas/${reservaId}`, { method: 'POST' });
-            overlay.remove();
-            mostrarToast(`Reserva de ${nombreCliente} añadida a la Ruta Diaria.`, 'success');
-            await cargarReservas();
-        } catch (err) {
-            console.error('Error asignando ruta:', err);
-            mostrarToast(err.message, 'error');
-        }
-    });
-}
-
 // ─── Eventos de botones en cada fila ─────────────────────────────────────────
 function adjuntarEventosTabla() {
 
-    // EDITAR (por ahora solo cambia estado)
+    // EDITAR
     document.querySelectorAll('button[aria-label="Editar"]').forEach(btn => {
         btn.addEventListener('click', async function () {
             const reserva = reservasCache.find(r => r.id == this.dataset.id);
             if (!reserva) return;
 
-            mostrarToast('Edición de etapas próximamente.', 'info');
+            // Abrir modal de edición con los datos de la reserva
+            abrirModalEdicion(reserva);
+        });
+    });
+
+    // GENERAR ETIQUETAS PDF
+    document.querySelectorAll('.etiquetas-btn').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            const reservaId = this.dataset.id;
+            await generarEtiquetasPDF(reservaId);
         });
     });
 
@@ -757,25 +714,6 @@ function adjuntarEventosTabla() {
                 await apiCall(`${API.reservas}/${this.dataset.id}/estado?estado=Cancelada`, { method: 'PUT' });
                 mostrarToast(`Reserva de ${nombre} cancelada.`, 'success');
                 await cargarReservas();
-            } catch (err) {
-                mostrarToast(err.message, 'error');
-            }
-        });
-    });
-
-    // PASAR A RUTA DIARIA
-    document.querySelectorAll('button[aria-label="Pasar a Ruta Diaria"]').forEach(btn => {
-        btn.addEventListener('click', async function () {
-            const reserva = reservasCache.find(r => r.id == this.dataset.id);
-            const nombre  = reserva?.cliente?.nombre || `Reserva #${this.dataset.id}`;
-
-            try {
-                const repartidores = await apiCall(API.repartidores);
-                if (!repartidores?.length) {
-                    mostrarToast('No hay repartidores disponibles.', 'error');
-                    return;
-                }
-                crearModalRuta(this.dataset.id, nombre, repartidores);
             } catch (err) {
                 mostrarToast(err.message, 'error');
             }
@@ -829,6 +767,222 @@ function adjuntarFiltros() {
 }
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FUNCIÓN: ABRIR MODAL DE EDICIÓN
+// ═══════════════════════════════════════════════════════════════════════════
+function abrirModalEdicion(reserva) {
+    // Remover modal existente si lo hay
+    document.querySelector('.modal-overlay')?.remove();
+
+    etapasCounter = 0;
+
+    const agenciaOpciones = modalAgencias
+        .map(a => `<option value="${a.nombre}">`)
+        .join('');
+
+    const empresaOpciones = modalEmpresas
+        .map(e => `<option value="${e.nombre}">`)
+        .join('');
+
+    const repartidorOpciones = modalRepartidores
+        .map(r => `<option value="${r.id}">${r.nombre}</option>`)
+        .join('');
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:50;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease forwards;overflow-y:auto;padding:20px;';
+
+    overlay.innerHTML = `
+        <div style="background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.15);width:100%;max-width:900px;margin:auto;overflow:hidden;animation:modalIn 0.25s ease forwards;">
+
+            <!-- Header -->
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #f3f4f6;">
+                <h3 style="font-size:18px;font-weight:700;color:#111827;">Editar Reserva #${reserva.id}</h3>
+                <button class="modal-close" style="display:flex;height:32px;width:32px;align-items:center;justify-content:center;border-radius:8px;border:none;background:transparent;color:#9ca3af;cursor:pointer;">
+                    <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+                </button>
+            </div>
+
+            <!-- Body -->
+            <div style="padding:20px 24px;max-height:70vh;overflow-y:auto;">
+
+                <!-- Datos Cliente (solo lectura) -->
+                <div style="margin-bottom:24px;padding:16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;">
+                    <h4 style="font-size:13px;font-weight:700;color:#111827;margin-bottom:12px;">Datos del Cliente (Solo lectura)</h4>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                        <div>
+                            <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:6px;">Nombre</label>
+                            <input type="text" value="${reserva.cliente?.nombre || ''}" disabled style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#6b7280;background:#f9fafb;">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;margin-bottom:6px;">Email</label>
+                            <input type="text" value="${reserva.cliente?.email || ''}" disabled style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#6b7280;background:#f9fafb;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Datos Reserva -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
+                    <div>
+                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Agencia</label>
+                        <input list="agencias-list-edit" id="modal-agencia-edit" value="${reserva.agencia?.nombre || ''}" placeholder="Escribe o selecciona agencia" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;">
+                        <datalist id="agencias-list-edit">
+                            ${agenciaOpciones}
+                        </datalist>
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Empresa</label>
+                        <input list="empresas-list-edit" id="modal-empresa-edit" value="${reserva.empresa?.nombre || ''}" placeholder="Escribe o selecciona empresa" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;">
+                        <datalist id="empresas-list-edit">
+                            ${empresaOpciones}
+                        </datalist>
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Repartidor</label>
+                        <select id="modal-repartidor-edit" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
+                            <option value="">Sin asignar</option>
+                            ${repartidorOpciones}
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Estado</label>
+                        <select id="modal-estado-edit" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
+                            <option value="Pendiente" ${reserva.estado === 'Pendiente' ? 'selected' : ''}>Pendiente</option>
+                            <option value="Pagado en ruta" ${reserva.estado === 'Pagado en ruta' ? 'selected' : ''}>Pagado en ruta</option>
+                            <option value="Bizum" ${reserva.estado === 'Bizum' ? 'selected' : ''}>Bizum</option>
+                            <option value="Pagado por transferencia" ${reserva.estado === 'Pagado por transferencia' ? 'selected' : ''}>Pagado por transferencia</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:24px;">
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Observaciones</label>
+                    <textarea id="modal-observaciones-edit" rows="2" placeholder="Observaciones/notas de la reserva" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;resize:vertical;">${reserva.observaciones || ''}</textarea>
+                </div>
+
+                <!-- Etapas del Camino (Solo lectura para esta versión) -->
+                <div style="margin-bottom:16px;">
+                    <h4 style="font-size:14px;font-weight:700;color:#111827;margin-bottom:12px;">Etapas del Camino (${reserva.etapas?.length || 0} etapas)</h4>
+                    <div style="display:flex;flex-direction:column;gap:12px;">
+                        ${(reserva.etapas || []).map((etapa, i) => `
+                            <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;background:#f9fafb;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                                    <span style="font-size:13px;font-weight:700;color:#374151;">Etapa ${i + 1}</span>
+                                    <span style="font-size:12px;color:#6b7280;">${etapa.fecha || 'Sin fecha'}</span>
+                                </div>
+                                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px;color:#6b7280;">
+                                    <div><strong>Origen:</strong> ${etapa.alojamientoSalida?.nombre || '—'}</div>
+                                    <div><strong>Destino:</strong> ${etapa.alojamientoDestino?.nombre || '—'}</div>
+                                    <div><strong>Precio:</strong> €${(etapa.cantidadMochilas * etapa.precioUnitario).toFixed(2)}</div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Precio Total -->
+                <div style="margin-top:24px;padding:16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-size:14px;font-weight:600;color:#6b7280;">PRECIO TOTAL:</span>
+                    <span style="font-size:20px;font-weight:700;color:#1773cf;">€${(reserva.precioTotal || 0).toFixed(2)}</span>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div style="display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:16px 24px;border-top:1px solid #f3f4f6;background:#f9fafb;">
+                <button class="modal-close" style="padding:8px 16px;border-radius:8px;border:none;background:transparent;font-size:14px;font-weight:500;color:#4b5563;cursor:pointer;">Cancelar</button>
+                <button id="modal-guardar-edicion" style="padding:8px 20px;border-radius:8px;border:none;background:#1773cf;color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.1);">
+                    Guardar Cambios
+                </button>
+            </div>
+        </div>`;
+
+    document.body.appendChild(overlay);
+
+    // Eventos
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelectorAll('.modal-close').forEach(btn => btn.addEventListener('click', () => overlay.remove()));
+
+    // Preseleccionar repartidor
+    if (reserva.repartidor?.id) {
+        document.getElementById('modal-repartidor-edit').value = reserva.repartidor.id;
+    }
+
+    // Guardar cambios
+    document.getElementById('modal-guardar-edicion').addEventListener('click', async () => {
+        await guardarEdicionReserva(reserva.id);
+    });
+}
+
+async function guardarEdicionReserva(reservaId) {
+    const agenciaNombre = document.getElementById('modal-agencia-edit').value.trim();
+    const empresaNombre = document.getElementById('modal-empresa-edit').value.trim();
+    const repartidorId = document.getElementById('modal-repartidor-edit').value;
+    const estado = document.getElementById('modal-estado-edit').value;
+    const observaciones = document.getElementById('modal-observaciones-edit').value.trim();
+
+    const updateData = {
+        agenciaNombre: agenciaNombre || null,
+        empresaNombre: empresaNombre || null,
+        repartidorId: repartidorId ? parseInt(repartidorId) : null,
+        estado: estado,
+        observaciones: observaciones || null
+    };
+
+    try {
+        await apiCall(`${API.reservas}/${reservaId}`, {
+            method: 'PUT',
+            body: JSON.stringify(updateData)
+        });
+
+        document.querySelector('.modal-overlay')?.remove();
+        mostrarToast('Reserva actualizada correctamente', 'success');
+        await cargarReservas();
+    } catch (err) {
+        console.error('Error actualizando reserva:', err);
+        mostrarToast(err.message, 'error');
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FUNCIÓN: GENERAR ETIQUETAS PDF Y ENVIAR POR EMAIL
+// ═══════════════════════════════════════════════════════════════════════════
+async function generarEtiquetasPDF(reservaId) {
+    const reserva = reservasCache.find(r => r.id == reservaId);
+    if (!reserva) {
+        mostrarToast('Reserva no encontrada', 'error');
+        return;
+    }
+
+    if (!reserva.etapas || reserva.etapas.length === 0) {
+        mostrarToast('Esta reserva no tiene etapas', 'error');
+        return;
+    }
+
+    if (!reserva.cliente || !reserva.cliente.email) {
+        mostrarToast('El cliente no tiene email registrado', 'error');
+        return;
+    }
+
+    if (!confirm(`¿Generar y enviar ${reserva.etapas.length} etiquetas PDF a ${reserva.cliente.email}?`)) {
+        return;
+    }
+
+    try {
+        mostrarToast('Generando etiquetas PDF...', 'info');
+
+        // Llamar al endpoint del backend
+        await apiCall(`${API.reservas}/${reservaId}/generar-etiquetas`, {
+            method: 'POST'
+        });
+
+        mostrarToast(`Etiquetas PDF enviadas a ${reserva.cliente.email}`, 'success');
+    } catch (err) {
+        console.error('Error generando etiquetas:', err);
+        mostrarToast('Error al generar etiquetas: ' + err.message, 'error');
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async function () {
 
     if (!AuthService.isAuthenticated()) {
@@ -843,6 +997,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         modalClientes = await apiCall(API.clientes);
         modalAgencias = await apiCall(API.agencias);
         modalAlbergues = await apiCall(API.albergues);
+        modalEmpresas = await apiCall(API.empresas);
+        modalRepartidores = await apiCall(API.repartidores);
     } catch (e) {
         console.error('Error cargando datos:', e);
         mostrarToast('Error cargando datos iniciales.', 'error');

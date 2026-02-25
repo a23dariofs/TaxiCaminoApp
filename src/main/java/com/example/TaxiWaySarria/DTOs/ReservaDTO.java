@@ -1,21 +1,21 @@
 package com.example.TaxiWaySarria.DTOs;
 
+import com.example.TaxiWaySarria.DTOs.EtapaCaminoDTO;
+
 import java.util.List;
 
 public class ReservaDTO {
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Datos del cliente (buscar existente o crear nuevo)
-    // ═══════════════════════════════════════════════════════════════════════════
+    // Datos del cliente
     private String clienteEmail;
     private String clienteTelefono;
     private String clienteNombre;
     private String clienteApellidos;
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // Datos de la reserva
-    // ═══════════════════════════════════════════════════════════════════════════
-    private String agenciaNombre;  // ← Cambio: nombre en vez de ID
+    private String agenciaNombre;
+    private String empresaNombre;  // ← NUEVO
+    private Long repartidorId;     // ← NUEVO
     private String observaciones;
     private String estado;
     private List<EtapaCaminoDTO> etapas;
@@ -60,6 +60,22 @@ public class ReservaDTO {
 
     public void setAgenciaNombre(String agenciaNombre) {
         this.agenciaNombre = agenciaNombre;
+    }
+
+    public String getEmpresaNombre() {
+        return empresaNombre;
+    }
+
+    public void setEmpresaNombre(String empresaNombre) {
+        this.empresaNombre = empresaNombre;
+    }
+
+    public Long getRepartidorId() {
+        return repartidorId;
+    }
+
+    public void setRepartidorId(Long repartidorId) {
+        this.repartidorId = repartidorId;
     }
 
     public String getObservaciones() {

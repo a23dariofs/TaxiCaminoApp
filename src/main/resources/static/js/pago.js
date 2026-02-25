@@ -15,7 +15,8 @@ const API = {
     facturas:      '/api/facturas',
     lineas:        '/api/lineas-factura',
     reservas:      '/api/reservas',
-    clientes:      '/api/clientes'
+    clientes:      '/api/clientes',
+    agencias:      '/api/agencias'  // ✅ AÑADIDO
 };
 
 // ─── Helper: usa AuthService para mandar el token automáticamente ───────────
@@ -39,7 +40,13 @@ async function apiCall(url, options = {}) {
 
 // ─── Estado local ────────────────────────────────────────────────────────────
 let facturasCache = [];
+let facturasCacheFull = [];  // ✅ AÑADIDO: Guardamos TODAS las facturas sin filtrar
 let modalClientes = [];
+let modalAgencias = [];  // ✅ AÑADIDO
+let filtroAgenciaActivo = false;  // ✅ AÑADIDO
+let agenciaSeleccionada = null;  // ✅ AÑADIDO: Para generar PDF
+let fechaInicio = null;  // ✅ AÑADIDO: Para generar PDF
+let fechaFin = null;  // ✅ AÑADIDO: Para generar PDF
 
 // ─── Paginación ──────────────────────────────────────────────────────────────
 const ITEMS_POR_PAGINA = 4;
@@ -152,21 +159,273 @@ function detectarPresupuestoAceptado() {
 // ─── Cargar facturas desde el backend ────────────────────────────────────────
 async function cargarFacturas() {
     try {
-        facturasCache = await apiCall(API.facturas);
+        const todasFacturas = await apiCall(API.facturas);
 
         // Normalizar: si el backend usa importeTotal, crear alias total
-        facturasCache = facturasCache.map(f => ({
+        facturasCacheFull = todasFacturas.map(f => ({
             ...f,
             total: f.total || f.importeTotal || 0
         }));
 
+        facturasCache = [...facturasCacheFull];  // ✅ Copia para filtrar
+
         paginaActual = 1;
         renderTabla();
         renderPaginacion();
-        actualizarEstadisticas(facturasCache);
+        actualizarEstadisticas();
     } catch (err) {
         console.error('Error cargando facturas:', err);
         mostrarToast('No se pudieron cargar las facturas.', 'error');
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ NUEVO: MODAL FILTRAR POR AGENCIA
+// ═══════════════════════════════════════════════════════════════════════════
+async function abrirModalFiltroAgencia() {
+    document.querySelector('.modal-overlay')?.remove();
+
+    // Cargar agencias si no las tenemos
+    if (modalAgencias.length === 0) {
+        try {
+            modalAgencias = await apiCall(API.agencias);
+        } catch (e) {
+            mostrarToast('No se pudieron cargar las agencias.', 'error');
+            return;
+        }
+    }
+
+    const agenciaOpciones = modalAgencias
+        .map(a => `<option value="${a.id}">${a.nombre}</option>`)
+        .join('');
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:50;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease forwards;';
+
+    overlay.innerHTML = `
+        <div style="background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.15);width:100%;max-width:520px;margin:0 16px;overflow:hidden;animation:modalIn 0.25s ease forwards;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #f3f4f6;">
+                <h3 style="font-size:18px;font-weight:700;color:#111827;">Filtrar Pagos por Agencia</h3>
+                <button class="modal-close" style="display:flex;height:32px;width:32px;align-items:center;justify-content:center;border-radius:8px;border:none;background:transparent;color:#9ca3af;cursor:pointer;">
+                    <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+                </button>
+            </div>
+
+            <div style="padding:20px 24px;display:flex;flex-direction:column;gap:16px;">
+                <div>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Agencia *</label>
+                    <select id="filtro-agencia" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
+                        <option value="" disabled selected>Selecciona una agencia</option>
+                        ${agenciaOpciones}
+                    </select>
+                </div>
+                <div style="display:flex;gap:16px;">
+                    <div style="flex:1;">
+                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Fecha Inicio *</label>
+                        <input type="date" id="filtro-fecha-inicio"
+                            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
+                    </div>
+                    <div style="flex:1;">
+                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Fecha Fin *</label>
+                        <input type="date" id="filtro-fecha-fin"
+                            style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
+                    </div>
+                </div>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 24px;border-top:1px solid #f3f4f6;background:#f9fafb;">
+                <button id="btn-limpiar-filtro" style="padding:8px 16px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;font-size:14px;font-weight:500;color:#4b5563;cursor:pointer;">Limpiar Filtros</button>
+                <div style="display:flex;gap:12px;">
+                    <button class="modal-close" style="padding:8px 16px;border-radius:8px;border:none;background:transparent;font-size:14px;font-weight:500;color:#4b5563;cursor:pointer;">Cancelar</button>
+                    <button id="btn-aplicar-filtro" style="padding:8px 20px;border-radius:8px;border:none;background:#1773cf;color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.1);">
+                        Aplicar Filtro
+                    </button>
+                </div>
+            </div>
+        </div>`;
+
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelectorAll('.modal-close').forEach(btn => btn.addEventListener('click', () => overlay.remove()));
+
+    document.getElementById('btn-aplicar-filtro').addEventListener('click', aplicarFiltroAgencia);
+    document.getElementById('btn-limpiar-filtro').addEventListener('click', limpiarFiltroAgencia);
+}
+
+async function aplicarFiltroAgencia() {
+    const agenciaId = document.getElementById('filtro-agencia')?.value;
+    const fechaInicioInput = document.getElementById('filtro-fecha-inicio')?.value;
+    const fechaFinInput = document.getElementById('filtro-fecha-fin')?.value;
+
+    if (!agenciaId || !fechaInicioInput || !fechaFinInput) {
+        mostrarToast('Por favor completa todos los campos.', 'error');
+        return;
+    }
+
+    agenciaSeleccionada = modalAgencias.find(a => a.id == agenciaId);
+    fechaInicio = new Date(fechaInicioInput);
+    fechaFin = new Date(fechaFinInput);
+    fechaFin.setHours(23, 59, 59, 999);
+
+    try {
+        // Filtrar facturas directamente por agencia y fechas
+        facturasCache = facturasCacheFull.filter(f => {
+            // Filtrar por agencia
+            if (!f.agencia || f.agencia.id != agenciaId) return false;
+
+            // Filtrar por fecha
+            const fechaFactura = new Date(f.fechaEmision);
+            if (fechaFactura < fechaInicio || fechaFactura > fechaFin) return false;
+
+            return true;
+        });
+
+        if (facturasCache.length === 0) {
+            mostrarToast(`No se encontraron pagos de ${agenciaSeleccionada.nombre} entre ${fechaInicioInput} y ${fechaFinInput}`, 'info');
+            document.querySelector('.modal-overlay')?.remove();
+            return;
+        }
+
+        filtroAgenciaActivo = true;
+
+        document.querySelector('.modal-overlay')?.remove();
+        paginaActual = 1;
+        renderTabla();
+        renderPaginacion();
+
+        mostrarToast(`Mostrando ${facturasCache.length} pagos de ${agenciaSeleccionada.nombre}`, 'success');
+
+        // Mostrar badge de filtro activo
+        mostrarBadgeFiltroActivo(agenciaSeleccionada.nombre, fechaInicioInput, fechaFinInput);
+
+    } catch (err) {
+        console.error('Error aplicando filtro:', err);
+        mostrarToast('Error al aplicar filtro: ' + err.message, 'error');
+    }
+}
+
+function limpiarFiltroAgencia() {
+    facturasCache = [...facturasCacheFull];
+    filtroAgenciaActivo = false;
+    agenciaSeleccionada = null;
+    fechaInicio = null;
+    fechaFin = null;
+
+    document.querySelector('.modal-overlay')?.remove();
+    document.getElementById('filtro-badge')?.remove();
+
+    paginaActual = 1;
+    renderTabla();
+    renderPaginacion();
+
+    mostrarToast('Filtros eliminados', 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ NUEVO: GENERAR FACTURA PDF PARA AGENCIA
+// ═══════════════════════════════════════════════════════════════════════════
+async function generarFacturaPDFAgencia() {
+    if (!agenciaSeleccionada || facturasCache.length === 0) {
+        mostrarToast('No hay pagos filtrados para generar la factura', 'error');
+        return;
+    }
+
+    mostrarToast('Generando factura PDF...', 'info');
+
+    try {
+        // Calcular totales
+        const subtotal = facturasCache.reduce((sum, f) => sum + (f.total || f.importeTotal || 0), 0);
+        const iva = subtotal * 0.21; // IVA del 21%
+        const total = subtotal + iva;
+
+        // Preparar datos para el PDF
+        const facturaData = {
+            agencia: {
+                nombre: agenciaSeleccionada.nombre,
+                cif: agenciaSeleccionada.cif || '',
+                direccion: agenciaSeleccionada.direccion || '',
+                telefono: agenciaSeleccionada.telefono || '',
+                email: agenciaSeleccionada.email || ''
+            },
+            fechaInicio: fechaInicio.toISOString().split('T')[0],
+            fechaFin: fechaFin.toISOString().split('T')[0],
+            fechaEmision: new Date().toISOString().split('T')[0],
+            numeroFactura: `TC-AGE-${agenciaSeleccionada.id}-${Date.now()}`,
+            pagos: facturasCache.map(f => ({
+                id: f.id,
+                fecha: f.fechaEmision || f.fechaPago,
+                concepto: f.concepto || 'Servicio de taxi',
+                cliente: f.cliente?.nombre || '—',
+                importe: f.total || f.importeTotal || 0
+            })),
+            subtotal: subtotal.toFixed(2),
+            iva: iva.toFixed(2),
+            total: total.toFixed(2)
+        };
+
+        // Llamar al endpoint del backend
+        const response = await fetch(`${API.facturas}/generar-factura-agencia-pdf`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('jwt_token') || localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify(facturaData)
+        });
+
+        if (!response.ok) {
+            throw new Error('Error al generar la factura');
+        }
+
+        // Descargar el PDF
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const nombreArchivo = `Factura_${agenciaSeleccionada.nombre.replace(/\s+/g, '_')}_${formatFecha(fechaInicio)}_${formatFecha(fechaFin)}.pdf`;
+        a.download = nombreArchivo;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        mostrarToast('Factura generada correctamente', 'success');
+
+    } catch (err) {
+        console.error('❌ Error generando factura:', err);
+        mostrarToast('Error al generar la factura: ' + err.message, 'error');
+    }
+}
+
+function mostrarBadgeFiltroActivo(agenciaNombre, fechaInicio, fechaFin) {
+    document.getElementById('filtro-badge')?.remove();
+
+    const badge = document.createElement('div');
+    badge.id = 'filtro-badge';
+    badge.style.cssText = 'margin-bottom:16px;padding:12px 16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;display:flex;align-items:center;justify-content:space-between;';
+    badge.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;">
+            <span class="material-symbols-outlined" style="font-size:20px;color:#1d4ed8;">filter_alt</span>
+            <span style="font-size:14px;color:#1e40af;">
+                <strong>Filtro activo:</strong> ${agenciaNombre} del ${fechaInicio} al ${fechaFin}
+            </span>
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button onclick="generarFacturaPDFAgencia()" style="padding:6px 12px;border-radius:6px;border:none;background:#16a34a;color:#fff;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;">
+                <span class="material-symbols-outlined" style="font-size:16px;">picture_as_pdf</span>
+                Factura PDF
+            </button>
+            <button onclick="limpiarFiltroAgencia()" style="padding:6px 12px;border-radius:6px;border:none;background:#1773cf;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">
+                Limpiar
+            </button>
+        </div>
+    `;
+
+    const tabla = document.querySelector('.bg-white.rounded-xl.border');
+    if (tabla) {
+        tabla.parentNode.insertBefore(badge, tabla);
     }
 }
 
@@ -183,8 +442,8 @@ function renderTabla() {
     if (facturasCache.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="7" style="padding:40px 24px;text-align:center;font-size:14px;color:#9ca3af;">
-                    No hay pagos registrados.
+                <td colspan="8" style="padding:40px 24px;text-align:center;font-size:14px;color:#9ca3af;">
+                    ${filtroAgenciaActivo ? 'No hay pagos que coincidan con el filtro.' : 'No hay pagos registrados.'}
                 </td>
             </tr>`;
         return;
@@ -242,9 +501,10 @@ function renderTabla() {
                 </div>`;
         }
 
-        // Columnas: Cliente | Concepto | Fecha Pago | Importe | Método | Estado | Acciones
+        // Columnas: Cliente | Agencia | Concepto | Fecha Pago | Importe | Método | Estado | Acciones
         tr.innerHTML = `
             <td class="px-6 py-5 whitespace-nowrap text-sm font-medium text-gray-900">${f.cliente?.nombre || '—'}</td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${f.agencia?.nombre || '—'}</td>
             <td class="px-6 py-5 text-sm text-gray-600">${concepto}</td>
             <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${fechaPago}</td>
             <td class="px-6 py-5 text-right whitespace-nowrap text-sm font-bold text-gray-900">€${f.total?.toFixed(2) || '0.00'}</td>
@@ -303,7 +563,7 @@ function mostrarToast(msg, tipo = 'error') {
     setTimeout(() => {
         toast.style.animation = 'toastOut 0.3s ease forwards';
         setTimeout(() => toast.remove(), 300);
-    }, 5000); // 5 segundos para dar tiempo a leer el mensaje largo
+    }, 5000);
 }
 
 // ─── Renderizar paginación ──────────────────────────────────────────────────
@@ -394,6 +654,10 @@ function crearModalEditar(factura) {
         .map(c => `<option value="${c.id}" ${c.id === factura.cliente?.id ? 'selected' : ''}>${c.nombre}</option>`)
         .join('');
 
+    const agenciaOpciones = modalAgencias
+        .map(a => `<option value="${a.id}" ${a.id === factura.agencia?.id ? 'selected' : ''}>${a.nombre}</option>`)
+        .join('');
+
     const concepto = factura.lineas && factura.lineas.length > 0
         ? factura.lineas[0].concepto
         : factura.concepto || '';
@@ -416,6 +680,13 @@ function crearModalEditar(factura) {
                     <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Cliente</label>
                     <select id="modal-cliente" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
                         ${clienteOpciones}
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Agencia</label>
+                    <select id="modal-agencia" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
+                        <option value="">Sin agencia</option>
+                        ${agenciaOpciones}
                     </select>
                 </div>
                 <div>
@@ -474,6 +745,7 @@ function crearModalEditar(factura) {
 async function handleModalEditSubmit() {
     const facturaId = this.dataset.id;
     const clienteId = document.getElementById('modal-cliente')?.value;
+    const agenciaId = document.getElementById('modal-agencia')?.value;
     const concepto  = document.getElementById('modal-concepto')?.value.trim();
     const importe   = document.getElementById('modal-importe')?.value;
     const metodo    = document.getElementById('modal-metodo')?.value;
@@ -486,7 +758,7 @@ async function handleModalEditSubmit() {
     }
 
     try {
-        const facturaOriginal = facturasCache.find(f => f.id == facturaId);
+        const facturaOriginal = facturasCacheFull.find(f => f.id == facturaId);
 
         const facturaActualizada = {
             fechaEmision: facturaOriginal.fechaEmision,
@@ -494,7 +766,8 @@ async function handleModalEditSubmit() {
             importeTotal: parseFloat(importe),
             estado: estado,
             metodoPago: metodo,
-            concepto: concepto
+            concepto: concepto,
+            agenciaId: agenciaId ? parseInt(agenciaId) : null
         };
 
         await apiCall(`${API.facturas}/${facturaId}`, {
@@ -520,6 +793,10 @@ function crearModal() {
         .map(c => `<option value="${c.id}">${c.nombre}</option>`)
         .join('');
 
+    const agenciaOpciones = modalAgencias
+        .map(a => `<option value="${a.id}">${a.nombre}</option>`)
+        .join('');
+
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:50;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease forwards;';
@@ -535,20 +812,27 @@ function crearModal() {
 
             <div style="padding:20px 24px;display:flex;flex-direction:column;gap:16px;max-height:65vh;overflow-y:auto;">
                 <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Cliente</label>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Cliente *</label>
                     <select id="modal-cliente" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
                         <option value="" disabled selected>Selecciona un cliente</option>
                         ${clienteOpciones}
                     </select>
                 </div>
                 <div>
-                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Concepto</label>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Agencia</label>
+                    <select id="modal-agencia" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
+                        <option value="">Sin agencia</option>
+                        ${agenciaOpciones}
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Concepto *</label>
                     <input type="text" id="modal-concepto" placeholder="Ej. Ruta Aeropuerto - Hotel"
                         style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
                 </div>
                 <div style="display:flex;gap:16px;">
                     <div style="flex:1;">
-                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Importe (€)</label>
+                        <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Importe (€) *</label>
                         <input type="number" id="modal-importe" step="0.01" min="0" placeholder="0.00"
                             style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
                     </div>
@@ -582,6 +866,7 @@ function crearModal() {
 // ─── Submit modal añadir pago ────────────────────────────────────────────────
 async function handleModalSubmit() {
     const clienteId = document.getElementById('modal-cliente')?.value;
+    const agenciaId = document.getElementById('modal-agencia')?.value;
     const concepto  = document.getElementById('modal-concepto')?.value.trim();
     const importe   = document.getElementById('modal-importe')?.value;
     const metodo    = document.getElementById('modal-metodo')?.value;
@@ -598,7 +883,8 @@ async function handleModalSubmit() {
             importeTotal: parseFloat(importe),
             estado: 'PENDIENTE',
             metodoPago: metodo,
-            concepto: concepto
+            concepto: concepto,
+            agenciaId: agenciaId ? parseInt(agenciaId) : null
         };
 
         await apiCall(`${API.facturas}/cliente/${clienteId}`, {
@@ -626,7 +912,7 @@ function adjuntarEventosTabla() {
             e.stopPropagation();
 
             const facturaId = this.dataset.id;
-            const factura = facturasCache.find(f => f.id == facturaId);
+            const factura = facturasCacheFull.find(f => f.id == facturaId);
             const nombre = factura?.cliente?.nombre || `Factura #${facturaId}`;
 
             if (!confirm(`¿Confirmar que el pago de ${nombre} ha sido completado?`)) return;
@@ -659,12 +945,17 @@ function adjuntarEventosTabla() {
     // EDITAR
     document.querySelectorAll('.edit-btn').forEach(btn => {
         btn.addEventListener('click', async function () {
-            const factura = facturasCache.find(f => f.id == this.dataset.id);
+            const factura = facturasCacheFull.find(f => f.id == this.dataset.id);
             if (!factura) return;
 
             if (modalClientes.length === 0) {
                 try { modalClientes = await apiCall(API.clientes); }
                 catch (e) { mostrarToast('No se pudieron cargar los clientes.', 'error'); return; }
+            }
+
+            if (modalAgencias.length === 0) {
+                try { modalAgencias = await apiCall(API.agencias); }
+                catch (e) { mostrarToast('No se pudieron cargar las agencias.', 'error'); return; }
             }
 
             crearModalEditar(factura);
@@ -674,7 +965,7 @@ function adjuntarEventosTabla() {
     // ELIMINAR
     document.querySelectorAll('.delete-btn').forEach(btn => {
         btn.addEventListener('click', async function () {
-            const factura = facturasCache.find(f => f.id == this.dataset.id);
+            const factura = facturasCacheFull.find(f => f.id == this.dataset.id);
             const nombre = factura?.cliente?.nombre || `Factura #${this.dataset.id}`;
 
             if (!confirm(`¿Estás seguro de eliminar el pago de ${nombre}?`)) return;
@@ -909,13 +1200,35 @@ document.addEventListener('DOMContentLoaded', async function () {
     // ✅ IMPORTANTE: Configurar el menú de logout
     configurarLogout();
 
-    // Botón añadir pago manualmente
+    // ✅ AÑADIR BOTÓN DE FILTRAR POR AGENCIA
     const addBtn = document.getElementById('addPaymentBtn');
+    if (addBtn) {
+        // Crear botón de filtrar
+        const btnFiltrar = document.createElement('button');
+        btnFiltrar.id = 'filterAgencyBtn';
+        btnFiltrar.className = 'flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white rounded-lg text-sm font-bold hover:bg-purple-700 transition-all shadow-sm';
+        btnFiltrar.innerHTML = `
+            <span class="material-symbols-outlined text-lg">filter_alt</span>
+            <span>Filtrar por Agencia</span>
+        `;
+
+        // Insertar después del botón de añadir pago
+        addBtn.parentNode.insertBefore(btnFiltrar, addBtn.nextSibling);
+
+        // Event listener
+        btnFiltrar.addEventListener('click', abrirModalFiltroAgencia);
+    }
+
+    // Botón añadir pago manualmente
     if (addBtn) {
         addBtn.addEventListener('click', async () => {
             if (modalClientes.length === 0) {
                 try { modalClientes = await apiCall(API.clientes); }
                 catch (e) { mostrarToast('No se pudieron cargar los clientes.', 'error'); return; }
+            }
+            if (modalAgencias.length === 0) {
+                try { modalAgencias = await apiCall(API.agencias); }
+                catch (e) { mostrarToast('No se pudieron cargar las agencias.', 'error'); return; }
             }
             crearModal();
         });

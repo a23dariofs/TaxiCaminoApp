@@ -10,86 +10,135 @@ tailwind.config = {
     },
 }
 
-// ─── BASE URLs de los controllers ───────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// CONFIGURACIÓN DE API
+// ═══════════════════════════════════════════════════════════════════════════
 const API = {
     presupuestos: '/api/presupuestos',
     clientes:     '/api/clientes',
     albergues:    '/api/albergues'
 };
 
-// ─── Helper: usa AuthService para mandar el token automáticamente ───────────
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPER DE API
+// ═══════════════════════════════════════════════════════════════════════════
 async function apiCall(url, options = {}) {
-    if (options.body && !options.headers) {
-        options.headers = { 'Content-Type': 'application/json' };
-    } else if (options.body && options.headers && !options.headers['Content-Type']) {
+    if (!options.headers) {
+        options.headers = {};
+    }
+
+    if (options.body) {
+        if (typeof options.body === 'object') {
+            options.body = JSON.stringify(options.body);
+        }
         options.headers['Content-Type'] = 'application/json';
     }
 
-    const res = await AuthService.authenticatedFetch(url, options);
-
-    if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`[${res.status}] ${errText || res.statusText}`);
+    const token = localStorage.getItem('jwt_token');
+    if (token) {
+        options.headers['Authorization'] = `Bearer ${token}`;
     }
 
-    return res.status === 204 ? null : res.json();
+    try {
+        const res = await fetch(url, options);
+
+        if (res.status === 401) {
+            console.warn('Token expirado o inválido');
+            localStorage.removeItem('jwt_token');
+            localStorage.removeItem('user_info');
+            window.location.href = '/login.html';
+            throw new Error('Sesión expirada');
+        }
+
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Error ${res.status}: ${errText || res.statusText}`);
+        }
+
+        if (res.status === 204) {
+            return null;
+        }
+
+        return await res.json();
+    } catch (err) {
+        if (err.message === 'Failed to fetch') {
+            throw new Error('Error de conexión con el servidor');
+        }
+        throw err;
+    }
 }
 
-// ─── Estado local ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// ESTADO LOCAL
+// ═══════════════════════════════════════════════════════════════════════════
 let presupuestosCache = [];
 let clientesCache = [];
-let alberguesCache = [];
-
-// ─── Paginación ──────────────────────────────────────────────────────────────
-const ITEMS_POR_PAGINA = 5;
 let paginaActual = 1;
+const ITEMS_POR_PAGINA = 5;
 
-// ─── Colores inline para estados ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// ESTILOS DE ESTADOS
+// ═══════════════════════════════════════════════════════════════════════════
 const ESTADO_STYLES = {
-    'ACEPTADO':  { bg: '#dcfce7', text: '#166534', border: '#86efac' },
-    'PENDIENTE': { bg: '#fed7aa', text: '#c2410c', border: '#fdba74' },
-    'RECHAZADO': { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5' },
-    'EXPIRADO':  { bg: '#f3f4f6', text: '#6b7280', border: '#d1d5db' },
+    'ACEPTADO':  'bg-green-50 text-green-700 border-green-200',
+    'PENDIENTE': 'bg-blue-50 text-blue-700 border-blue-200',
+    'ENVIADO':   'bg-blue-50 text-blue-700 border-blue-200',
+    'RECHAZADO': 'bg-red-50 text-red-700 border-red-200',
+    'EXPIRADO':  'bg-gray-100 text-gray-600 border-gray-200',
+    'CADUCADO':  'bg-gray-100 text-gray-600 border-gray-200'
 };
 
-function getEstadoStyle(estado) {
-    const s = ESTADO_STYLES[estado] || ESTADO_STYLES['PENDIENTE'];
-    return `background-color:${s.bg};color:${s.text};border-color:${s.border};`;
+function getEstadoCss(estado) {
+    return ESTADO_STYLES[estado?.toUpperCase()] || ESTADO_STYLES['PENDIENTE'];
+}
+
+function getEstadoTexto(estado) {
+    const textos = {
+        'ACEPTADO': 'Aceptado',
+        'PENDIENTE': 'Pendiente',
+        'ENVIADO': 'Enviado',
+        'RECHAZADO': 'Rechazado',
+        'EXPIRADO': 'Caducado',
+        'CADUCADO': 'Caducado'
+    };
+    return textos[estado?.toUpperCase()] || 'Pendiente';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CONFIGURACIÓN DE LOGOUT
+// MENÚ DE USUARIO
 // ═══════════════════════════════════════════════════════════════════════════
 function configurarLogout() {
-    // Buscar el botón de usuario en el header
     const userButton = document.querySelector('header button[class*="rounded-full"]');
     if (userButton) {
-        // Convertir el botón en un dropdown con opción de logout
-        userButton.addEventListener('click', () => {
-            mostrarMenuUsuario();
-        });
+        userButton.addEventListener('click', mostrarMenuUsuario);
     }
 }
 
-function mostrarMenuUsuario() {
-    // Eliminar menú existente si hay uno
+function mostrarMenuUsuario(e) {
+    e.stopPropagation();
+
     const menuExistente = document.getElementById('userMenu');
     if (menuExistente) {
         menuExistente.remove();
         return;
     }
 
-    const userInfo = AuthService.getUserInfo();
+    let userInfo = { username: 'Usuario', role: 'USER' };
+    try {
+        userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+    } catch(e) {
+        console.warn('No se pudo parsear user_info');
+    }
 
     const menu = document.createElement('div');
     menu.id = 'userMenu';
     menu.className = 'absolute top-16 right-10 bg-white rounded-lg shadow-xl border border-gray-100 py-2 z-50 min-w-[200px]';
     menu.innerHTML = `
         <div class="px-4 py-2 border-b border-gray-100">
-            <p class="text-sm font-semibold text-gray-900">${userInfo?.username || 'Usuario'}</p>
-            <p class="text-xs text-gray-500">${userInfo?.role || 'USER'}</p>
+            <p class="text-sm font-semibold text-gray-900">${userInfo.username || 'Usuario'}</p>
+            <p class="text-xs text-gray-500">${userInfo.role || 'USER'}</p>
         </div>
-        <button onclick="AuthService.logout()" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2">
+        <button id="logoutBtn" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2">
             <span class="material-symbols-outlined text-lg">logout</span>
             <span>Cerrar sesión</span>
         </button>
@@ -97,7 +146,12 @@ function mostrarMenuUsuario() {
 
     document.body.appendChild(menu);
 
-    // Cerrar al hacer clic fuera
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+        localStorage.removeItem('jwt_token');
+        localStorage.removeItem('user_info');
+        window.location.href = '/login.html';
+    });
+
     setTimeout(() => {
         document.addEventListener('click', function cerrarMenu(e) {
             if (!menu.contains(e.target)) {
@@ -108,23 +162,46 @@ function mostrarMenuUsuario() {
     }, 100);
 }
 
-// ─── Cargar presupuestos desde el backend ────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// CARGAR DATOS
+// ═══════════════════════════════════════════════════════════════════════════
 async function cargarPresupuestos() {
+    console.log('📥 Cargando presupuestos...');
     try {
-        presupuestosCache = await apiCall(API.presupuestos);
+        const data = await apiCall(API.presupuestos);
+        presupuestosCache = data || [];
+        console.log(`✅ ${presupuestosCache.length} presupuestos cargados`);
         paginaActual = 1;
         renderTabla();
         renderPaginacion();
     } catch (err) {
-        console.error('Error cargando presupuestos:', err);
-        mostrarToast('No se pudieron cargar los presupuestos.', 'error');
+        console.error('❌ Error cargando presupuestos:', err);
+        presupuestosCache = [];
+        renderTabla();
+        mostrarToast('Error al cargar presupuestos: ' + err.message, 'error');
     }
 }
 
-// ─── Renderizar tabla según página actual ───────────────────────────────────
+async function cargarClientes() {
+    try {
+        const data = await apiCall(API.clientes);
+        clientesCache = data || [];
+        console.log(`✅ ${clientesCache.length} clientes cargados`);
+    } catch (err) {
+        console.error('❌ Error cargando clientes:', err);
+        clientesCache = [];
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RENDERIZAR TABLA
+// ═══════════════════════════════════════════════════════════════════════════
 function renderTabla() {
     const tbody = document.getElementById('budgetsTableBody');
-    if (!tbody) return;
+    if (!tbody) {
+        console.warn('⚠️ No se encontró el tbody');
+        return;
+    }
 
     const inicio = (paginaActual - 1) * ITEMS_POR_PAGINA;
     const pagina = presupuestosCache.slice(inicio, inicio + ITEMS_POR_PAGINA);
@@ -134,8 +211,11 @@ function renderTabla() {
     if (presupuestosCache.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="7" style="padding:40px 24px;text-align:center;font-size:14px;color:#9ca3af;">
-                    No hay presupuestos registrados.
+                <td colspan="8" class="px-6 py-12 text-center">
+                    <div class="flex flex-col items-center gap-3">
+                        <span class="material-symbols-outlined text-5xl text-gray-300">description</span>
+                        <p class="text-gray-500 text-sm">No hay presupuestos registrados</p>
+                    </div>
                 </td>
             </tr>`;
         return;
@@ -147,64 +227,46 @@ function renderTabla() {
         tr.dataset.presupuestoId = p.id;
 
         const estado = p.estado || 'PENDIENTE';
-        const estadoStyle = getEstadoStyle(estado);
-        const estadoTexto = estado === 'ACEPTADO' ? 'Aceptado' : estado === 'RECHAZADO' ? 'Rechazado' : estado === 'EXPIRADO' ? 'Expirado' : 'Pendiente';
+        const estadoCss = getEstadoCss(estado);
+        const estadoTexto = getEstadoTexto(estado);
 
-        const fechaEmision = p.fechaEmision ? formatFecha(p.fechaEmision) : '-';
-        const fechaValidez = p.fechaValidez ? formatFecha(p.fechaValidez) : '-';
-        const importe = p.importeTotal != null ? `€${p.importeTotal.toFixed(2)}` : '€0.00';
-
-        let botonesAccion = '';
-
-        if (estado === 'PENDIENTE') {
-            botonesAccion = `
-                <div class="flex items-center gap-2">
-                    <button aria-label="Enviar email" data-id="${p.id}"
-                        class="send-btn flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-colors border border-blue-200">
-                        <span class="material-symbols-outlined text-sm">send</span> Enviar
-                    </button>
-                    <button aria-label="Editar" data-id="${p.id}"
-                        class="edit-btn flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">
-                        <span class="material-symbols-outlined text-base">edit</span>
-                    </button>
-                    <button aria-label="Eliminar" data-id="${p.id}"
-                        class="delete-btn flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors">
-                        <span class="material-symbols-outlined text-base">delete</span>
-                    </button>
-                </div>`;
-        } else if (estado === 'ACEPTADO') {
-            botonesAccion = `
-                <div class="flex items-center gap-2">
-                    <span class="text-xs text-green-600 font-semibold italic flex items-center gap-1">
-                        <span class="material-symbols-outlined text-sm">check_circle</span> Aceptado
-                    </span>
-                    <button aria-label="Eliminar" data-id="${p.id}"
-                        class="delete-btn flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors">
-                        <span class="material-symbols-outlined text-base">delete</span>
-                    </button>
-                </div>`;
-        } else {
-            botonesAccion = `
-                <div class="flex items-center gap-2">
-                    <button aria-label="Eliminar" data-id="${p.id}"
-                        class="delete-btn flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors">
-                        <span class="material-symbols-outlined text-base">delete</span>
-                    </button>
-                </div>`;
-        }
+        const cliente = p.cliente?.nombre || '—';
+        const fechaViaje = p.fechaViaje ? formatFecha(p.fechaViaje) : '—';
+        const origen = p.origen || '';
+        const destino = p.destino || '';
+        const origenDestino = (origen && destino) ? `${origen} - ${destino}` : '—';
+        const km = p.km != null ? `${p.km} km` : '—';
+        const precio = p.importeTotal != null ? `€${p.importeTotal.toFixed(2)}` : '€0.00';
+        const fechaCreacion = p.fechaEmision ? formatFecha(p.fechaEmision) : '—';
 
         tr.innerHTML = `
-            <td class="px-6 py-5 whitespace-nowrap text-sm font-medium text-gray-900">#${p.id || '—'}</td>
-            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${p.cliente?.nombre || '—'}</td>
-            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${fechaEmision}</td>
-            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${fechaValidez}</td>
-            <td class="px-6 py-5 text-right whitespace-nowrap text-sm font-bold text-gray-900">${importe}</td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm font-medium text-gray-900">${cliente}</td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${fechaViaje}</td>
+            <td class="px-6 py-5 text-sm text-gray-600 max-w-xs truncate">${origenDestino}</td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${km}</td>
+            <td class="px-6 py-5 text-right whitespace-nowrap text-sm font-bold text-gray-900">${precio}</td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${fechaCreacion}</td>
             <td class="px-6 py-5 whitespace-nowrap">
-                <span style="display:inline-flex;align-items:center;padding:4px 10px;border-radius:9999px;font-size:12px;font-weight:600;border:1px solid;${estadoStyle}">
+                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${estadoCss}">
                     ${estadoTexto}
                 </span>
             </td>
-            <td class="px-6 py-5 whitespace-nowrap">${botonesAccion}</td>`;
+            <td class="px-6 py-5 whitespace-nowrap">
+                <div class="flex items-center gap-2">
+                    <button aria-label="Editar" data-id="${p.id}" class="edit-btn flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">
+                        <span class="material-symbols-outlined text-base">edit</span>
+                    </button>
+                    <button aria-label="Eliminar" data-id="${p.id}" class="delete-btn flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors">
+                        <span class="material-symbols-outlined text-base">delete</span>
+                    </button>
+                    <button aria-label="Enviar presupuesto" data-id="${p.id}" class="send-btn flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors">
+                        <span class="material-symbols-outlined text-base">mail</span>
+                    </button>
+                    <button aria-label="Convertir en Reserva" data-id="${p.id}" class="reserve-btn flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 hover:bg-green-50 hover:text-green-600 transition-colors">
+                        <span class="material-symbols-outlined text-base">bookmark_add</span>
+                    </button>
+                </div>
+            </td>`;
 
         tbody.appendChild(tr);
     });
@@ -212,7 +274,6 @@ function renderTabla() {
     adjuntarEventosTabla();
 }
 
-// ─── Formateo fecha → "22/08/2024" ──────────────────────────────────────────
 function formatFecha(isoDate) {
     if (!isoDate) return '—';
     const d = new Date(isoDate);
@@ -220,79 +281,211 @@ function formatFecha(isoDate) {
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
-// ─── Toast ───────────────────────────────────────────────────────────────────
-function mostrarToast(msg, tipo = 'error') {
-    document.querySelector('.toast-notif')?.remove();
+// ═══════════════════════════════════════════════════════════════════════════
+// MODAL DE CREAR/EDITAR PRESUPUESTO
+// ═══════════════════════════════════════════════════════════════════════════
+function abrirModalPresupuesto(presupuestoId = null) {
+    const esEdicion = presupuestoId !== null;
+    const presupuesto = esEdicion ? presupuestosCache.find(p => p.id === presupuestoId) : null;
 
-    const colores = {
-        error:   { bg: '#fef2f2',   text: '#b91c1c', border: '#fecaca' },
-        success: { bg: '#f0fdf4',   text: '#15803d', border: '#bbf7d0' },
-        info:    { bg: '#eff6ff',   text: '#1d4ed8', border: '#bfdbfe' }
-    };
-    const iconos = { error: 'error', success: 'check_circle', info: 'info' };
-    const c = colores[tipo];
+    // Crear modal
+    const modal = document.createElement('div');
+    modal.id = 'modalPresupuesto';
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+    modal.innerHTML = `
+        <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+                <h3 class="text-xl font-bold text-gray-900">${esEdicion ? 'Editar Presupuesto' : 'Crear Nuevo Presupuesto'}</h3>
+                <button onclick="cerrarModal()" class="text-gray-400 hover:text-gray-600">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
 
-    const toast = document.createElement('div');
-    toast.className = 'toast-notif';
-    toast.style.cssText = `
-        position:fixed;bottom:24px;right:24px;z-index:100;
-        display:flex;align-items:center;gap:12px;
-        padding:14px 20px;border-radius:12px;
-        border:1px solid ${c.border};
-        background-color:${c.bg};color:${c.text};
-        font-size:14px;font-weight:500;
-        box-shadow:0 4px 12px rgba(0,0,0,0.1);
-        animation:toastIn 0.3s ease forwards;`;
+            <form id="formPresupuesto" class="p-6 space-y-4">
+                <!-- Cliente -->
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Cliente *</label>
+                    <select id="clienteId" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary">
+                        <option value="">Seleccionar cliente...</option>
+                        ${clientesCache.map(c => `
+                            <option value="${c.id}" ${presupuesto?.cliente?.id === c.id ? 'selected' : ''}>
+                                ${c.nombre} - ${c.email}
+                            </option>
+                        `).join('')}
+                    </select>
+                </div>
 
-    toast.innerHTML = `
-        <span class="material-symbols-outlined" style="font-size:20px;">${iconos[tipo]}</span>
-        <span>${msg}</span>`;
+                <!-- Fechas -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Fecha de Viaje *</label>
+                        <input type="date" id="fechaViaje" required value="${presupuesto?.fechaViaje || ''}"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Fecha de Emisión *</label>
+                        <input type="date" id="fechaEmision" required value="${presupuesto?.fechaEmision || new Date().toISOString().split('T')[0]}"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary">
+                    </div>
+                </div>
 
-    document.body.appendChild(toast);
+                <!-- Origen y Destino -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Origen *</label>
+                        <input type="text" id="origen" required value="${presupuesto?.origen || ''}" placeholder="Ej: Aeropuerto"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Destino *</label>
+                        <input type="text" id="destino" required value="${presupuesto?.destino || ''}" placeholder="Ej: Hotel Central"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary">
+                    </div>
+                </div>
 
-    setTimeout(() => {
-        toast.style.animation = 'toastOut 0.3s ease forwards';
-        setTimeout(() => toast.remove(), 300);
-    }, 4000);
+                <!-- KM y Precio -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Kilómetros Estimados *</label>
+                        <input type="number" id="km" required value="${presupuesto?.km || ''}" min="0" step="0.1"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Precio Total (€) *</label>
+                        <input type="number" id="importeTotal" required value="${presupuesto?.importeTotal || ''}" min="0" step="0.01"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary">
+                    </div>
+                </div>
+
+                <!-- Observaciones -->
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Observaciones</label>
+                    <textarea id="observaciones" rows="3" placeholder="Notas adicionales sobre el presupuesto..."
+                              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary">${presupuesto?.observaciones || ''}</textarea>
+                </div>
+
+                <!-- Botones -->
+                <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+                    <button type="button" onclick="cerrarModal()" class="px-5 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="px-5 py-2 bg-primary text-white rounded-lg hover:bg-blue-700 transition-colors font-bold flex items-center gap-2">
+                        <span class="material-symbols-outlined text-lg">save</span>
+                        <span>${esEdicion ? 'Guardar Cambios' : 'Crear Presupuesto'}</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Manejar envío del formulario
+    document.getElementById('formPresupuesto').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await guardarPresupuesto(presupuestoId);
+    });
+
+    // Cerrar al hacer clic fuera
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            cerrarModal();
+        }
+    });
 }
 
-// ─── Renderizar paginación ──────────────────────────────────────────────────
+async function guardarPresupuesto(presupuestoId) {
+    const formData = {
+        clienteId: parseInt(document.getElementById('clienteId').value),
+        fechaViaje: document.getElementById('fechaViaje').value,
+        fechaEmision: document.getElementById('fechaEmision').value,
+        origen: document.getElementById('origen').value,
+        destino: document.getElementById('destino').value,
+        km: parseFloat(document.getElementById('km').value),
+        importeTotal: parseFloat(document.getElementById('importeTotal').value),
+        observaciones: document.getElementById('observaciones').value || null,
+        estado: presupuestoId ? undefined : 'PENDIENTE' // Solo en creación
+    };
+
+    console.log('📤 Guardando presupuesto:', formData);
+
+    try {
+        if (presupuestoId) {
+            // Editar existente
+            await apiCall(`${API.presupuestos}/${presupuestoId}`, {
+                method: 'PUT',
+                body: formData
+            });
+            mostrarToast('Presupuesto actualizado correctamente', 'success');
+        } else {
+            // Crear nuevo
+            await apiCall(API.presupuestos, {
+                method: 'POST',
+                body: formData
+            });
+            mostrarToast('Presupuesto creado correctamente', 'success');
+        }
+
+        cerrarModal();
+        await cargarPresupuestos();
+    } catch (err) {
+        console.error('❌ Error guardando presupuesto:', err);
+        mostrarToast('Error al guardar: ' + err.message, 'error');
+    }
+}
+
+window.cerrarModal = function() {
+    const modal = document.getElementById('modalPresupuesto');
+    if (modal) {
+        modal.remove();
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAGINACIÓN
+// ═══════════════════════════════════════════════════════════════════════════
 function renderPaginacion() {
     const totalPaginas = Math.ceil(presupuestosCache.length / ITEMS_POR_PAGINA);
     const container = document.querySelector('.pagination-container');
 
-    if (!container || totalPaginas <= 1) {
-        if (container) container.innerHTML = '';
+    if (!container) return;
+
+    if (totalPaginas <= 1) {
+        container.innerHTML = '';
         return;
     }
 
     const paginas = getPaginasVisibles(paginaActual, totalPaginas);
 
-    let html = '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:24px;">';
+    let html = '<div class="flex items-center justify-center gap-2">';
 
-    html += `<button onclick="cambiarPagina(${paginaActual - 1})"
-        ${paginaActual === 1 ? 'disabled' : ''}
-        style="display:flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;color:#6b7280;cursor:${paginaActual === 1 ? 'not-allowed' : 'pointer'};opacity:${paginaActual === 1 ? '0.5' : '1'};">
-        <span class="material-symbols-outlined" style="font-size:18px;">chevron_left</span>
-    </button>`;
+    html += `
+        <button onclick="cambiarPagina(${paginaActual - 1})"
+            ${paginaActual === 1 ? 'disabled' : ''}
+            class="flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:bg-gray-50 transition-colors ${paginaActual === 1 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}">
+            <span class="material-symbols-outlined text-xl">chevron_left</span>
+        </button>`;
 
     paginas.forEach(p => {
         if (p === '...') {
-            html += '<span style="display:flex;align-items:center;justify-content:center;height:36px;width:36px;color:#9ca3af;">...</span>';
+            html += '<span class="flex h-8 w-8 items-center justify-center text-gray-600">...</span>';
         } else {
             const isActive = p === paginaActual;
-            html += `<button onclick="cambiarPagina(${p})"
-                style="display:flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:8px;border:1px solid ${isActive ? '#1773cf' : '#e5e7eb'};background:${isActive ? '#1773cf' : '#fff'};color:${isActive ? '#fff' : '#6b7280'};font-size:14px;font-weight:${isActive ? '700' : '500'};cursor:pointer;">
-                ${p}
-            </button>`;
+            html += `
+                <button onclick="cambiarPagina(${p})"
+                    class="flex h-8 w-8 items-center justify-center rounded text-sm font-medium transition-colors
+                    ${isActive ? 'bg-primary text-white font-bold' : 'text-gray-600 hover:bg-gray-50'}">
+                    ${p}
+                </button>`;
         }
     });
 
-    html += `<button onclick="cambiarPagina(${paginaActual + 1})"
-        ${paginaActual === totalPaginas ? 'disabled' : ''}
-        style="display:flex;align-items:center;justify-content:center;height:36px;width:36px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;color:#6b7280;cursor:${paginaActual === totalPaginas ? 'not-allowed' : 'pointer'};opacity:${paginaActual === totalPaginas ? '0.5' : '1'};">
-        <span class="material-symbols-outlined" style="font-size:18px;">chevron_right</span>
-    </button>`;
+    html += `
+        <button onclick="cambiarPagina(${paginaActual + 1})"
+            ${paginaActual === totalPaginas ? 'disabled' : ''}
+            class="flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:bg-gray-50 transition-colors ${paginaActual === totalPaginas ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}">
+            <span class="material-symbols-outlined text-xl">chevron_right</span>
+        </button>`;
 
     html += '</div>';
     container.innerHTML = html;
@@ -310,109 +503,280 @@ window.cambiarPagina = function(numero) {
     if (numero < 1 || numero > totalPaginas) return;
     paginaActual = numero;
     renderTabla();
+    renderPaginacion();
 };
 
-// ─── Eventos de botones en cada fila ─────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// EVENTOS DE BOTONES
+// ═══════════════════════════════════════════════════════════════════════════
 function adjuntarEventosTabla() {
-    // ENVIAR EMAIL
+    // Botón Enviar
     document.querySelectorAll('.send-btn').forEach(btn => {
-        btn.addEventListener('click', async function() {
-            const presupuestoId = parseInt(this.dataset.id);
-            await enviarPresupuesto(presupuestoId);
+        btn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            await enviarPresupuesto(parseInt(this.dataset.id));
         });
     });
 
-    // EDITAR
+    // Botón Editar
     document.querySelectorAll('.edit-btn').forEach(btn => {
-        btn.addEventListener('click', async function() {
-            const presupuesto = presupuestosCache.find(p => p.id == this.dataset.id);
-            if (!presupuesto) return;
-            abrirModalEditar(presupuesto);
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const id = parseInt(this.dataset.id);
+            console.log('✏️ Editando presupuesto:', id);
+            abrirModalPresupuesto(id);
         });
     });
 
-    // ELIMINAR
-    document.querySelectorAll('.delete-btn').forEach(btn => {
-        btn.addEventListener('click', async function() {
-            const presupuesto = presupuestosCache.find(p => p.id == this.dataset.id);
-            const nombre = presupuesto?.cliente?.nombre || `Presupuesto #${this.dataset.id}`;
+    // Botón Convertir en Reserva
+    document.querySelectorAll('.reserve-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            mostrarToast('Función de convertir a reserva en desarrollo', 'info');
+        });
+    });
 
-            if (!confirm(`¿Estás seguro de eliminar el presupuesto de ${nombre}?`)) return;
+    // Botón Eliminar
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            const id = this.dataset.id;
+
+            const presupuesto = presupuestosCache.find(p => p.id == id);
+            const cliente = presupuesto?.cliente?.nombre || `Presupuesto #${id}`;
+
+            if (!confirm(`¿Estás seguro de eliminar el presupuesto de ${cliente}?`)) {
+                return;
+            }
 
             try {
-                await apiCall(`${API.presupuestos}/${this.dataset.id}`, { method: 'DELETE' });
-                mostrarToast(`Presupuesto eliminado correctamente.`, 'success');
+                await apiCall(`${API.presupuestos}/${id}`, { method: 'DELETE' });
+                mostrarToast('Presupuesto eliminado correctamente', 'success');
                 await cargarPresupuestos();
             } catch (err) {
-                mostrarToast(err.message, 'error');
+                console.error('❌ Error eliminando presupuesto:', err);
+                mostrarToast('Error al eliminar: ' + err.message, 'error');
             }
         });
     });
 }
 
-// ─── Enviar presupuesto por email ────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// ENVIAR PRESUPUESTO
+// ═══════════════════════════════════════════════════════════════════════════
 async function enviarPresupuesto(presupuestoId) {
     if (!confirm('¿Enviar este presupuesto por email al cliente?')) return;
 
     try {
-        await apiCall(`${API.presupuestos}/${presupuestoId}/enviar`, {
-            method: 'POST'
-        });
-        mostrarToast('Presupuesto enviado por email correctamente.', 'success');
+        await apiCall(`${API.presupuestos}/${presupuestoId}/enviar`, { method: 'POST' });
+        mostrarToast('Presupuesto enviado por email correctamente', 'success');
         await cargarPresupuestos();
     } catch (err) {
-        console.error('Error enviando presupuesto:', err);
-        mostrarToast('Error al enviar el presupuesto: ' + err.message, 'error');
+        console.error('❌ Error enviando presupuesto:', err);
+        mostrarToast('Error al enviar: ' + err.message, 'error');
     }
 }
 
-// ─── Filtro por cliente ──────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// FILTRO DE BÚSQUEDA
+// ═══════════════════════════════════════════════════════════════════════════
 function aplicarFiltroCliente() {
     const input = document.getElementById('searchInput');
     if (!input) return;
 
     input.addEventListener('input', function(e) {
         const termino = e.target.value.toLowerCase();
-        const filas = document.querySelectorAll('tbody tr');
+        const filas = document.querySelectorAll('#budgetsTableBody tr');
 
         filas.forEach(fila => {
-            const cliente = fila.querySelector('td:nth-child(2)')?.textContent.toLowerCase() || '';
+            const cliente = fila.querySelector('td:nth-child(1)')?.textContent.toLowerCase() || '';
             fila.style.display = cliente.includes(termino) ? '' : 'none';
         });
     });
 }
 
-// ─── Modal crear/editar (placeholder - implementar según necesidad) ─────────
-function abrirModalEditar(presupuesto) {
-    mostrarToast('Función de edición en desarrollo', 'info');
-    console.log('Editar presupuesto:', presupuesto);
+// ═══════════════════════════════════════════════════════════════════════════
+// TOAST (NOTIFICACIONES)
+// ═══════════════════════════════════════════════════════════════════════════
+function mostrarToast(msg, tipo = 'info') {
+    document.querySelector('.toast-notif')?.remove();
+
+    const colores = {
+        error:   { bg: '#fef2f2', text: '#b91c1c', border: '#fecaca', icono: 'error' },
+        success: { bg: '#f0fdf4', text: '#15803d', border: '#bbf7d0', icono: 'check_circle' },
+        info:    { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe', icono: 'info' }
+    };
+
+    const c = colores[tipo] || colores.info;
+
+    const toast = document.createElement('div');
+    toast.className = 'toast-notif';
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 20px;
+        border-radius: 12px;
+        border: 1px solid ${c.border};
+        background-color: ${c.bg};
+        color: ${c.text};
+        font-size: 14px;
+        font-weight: 500;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        animation: toastIn 0.3s ease forwards;
+    `;
+
+    toast.innerHTML = `
+        <span class="material-symbols-outlined" style="font-size:20px;">${c.icono}</span>
+        <span>${msg}</span>
+    `;
+
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.animation = 'toastOut 0.3s ease forwards';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// INIT CON CONFIGURACIÓN DE LOGOUT
+// INICIALIZACIÓN
 // ═══════════════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async function() {
+    console.log('🚀 Iniciando sistema de presupuestos...');
 
-document.addEventListener('DOMContentLoaded', async function () {
-
-    // Verificar autenticación
-    if (!AuthService.isAuthenticated()) {
+    const token = localStorage.getItem('jwt_token');
+    if (!token) {
+        console.warn('⚠️ No hay token JWT - redirigiendo a login');
         window.location.href = '/login.html';
         return;
     }
 
-    // ✅ IMPORTANTE: Configurar el menú de logout
     configurarLogout();
 
-    // Botón añadir presupuesto
+    // Botón CREAR presupuesto
     const addBtn = document.getElementById('addBudgetBtn');
     if (addBtn) {
-        addBtn.addEventListener('click', () => {
-            mostrarToast('Función de creación en desarrollo', 'info');
+        addBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            console.log('➕ Abriendo modal de creación');
+            abrirModalPresupuesto();
         });
     }
 
     aplicarFiltroCliente();
-    await cargarPresupuestos();
 
-    console.log('✅ Taxicamino - Sistema de gestión de presupuestos conectado.');
+    // Cargar datos
+    await Promise.all([
+        cargarClientes(),
+        cargarPresupuestos()
+    ]);
+
+    console.log('✅ Sistema cargado completamente');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FILTRO DE BÚSQUEDA
+// ═══════════════════════════════════════════════════════════════════════════
+function aplicarFiltroCliente() {
+    const input = document.getElementById('searchInput');
+    if (!input) return;
+
+    input.addEventListener('input', function(e) {
+        const termino = e.target.value.toLowerCase();
+        const filas = document.querySelectorAll('#budgetsTableBody tr');
+
+        filas.forEach(fila => {
+            const cliente = fila.querySelector('td:nth-child(1)')?.textContent.toLowerCase() || '';
+            fila.style.display = cliente.includes(termino) ? '' : 'none';
+        });
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOAST (NOTIFICACIONES)
+// ═══════════════════════════════════════════════════════════════════════════
+function mostrarToast(msg, tipo = 'info') {
+    document.querySelector('.toast-notif')?.remove();
+
+    const colores = {
+        error:   { bg: '#fef2f2', text: '#b91c1c', border: '#fecaca', icono: 'error' },
+        success: { bg: '#f0fdf4', text: '#15803d', border: '#bbf7d0', icono: 'check_circle' },
+        info:    { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe', icono: 'info' }
+    };
+
+    const c = colores[tipo] || colores.info;
+
+    const toast = document.createElement('div');
+    toast.className = 'toast-notif';
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 20px;
+        border-radius: 12px;
+        border: 1px solid ${c.border};
+        background-color: ${c.bg};
+        color: ${c.text};
+        font-size: 14px;
+        font-weight: 500;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        animation: toastIn 0.3s ease forwards;
+    `;
+
+    toast.innerHTML = `
+        <span class="material-symbols-outlined" style="font-size:20px;">${c.icono}</span>
+        <span>${msg}</span>
+    `;
+
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.animation = 'toastOut 0.3s ease forwards';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INICIALIZACIÓN
+// ═══════════════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async function() {
+    console.log('🚀 Iniciando sistema de presupuestos...');
+
+    const token = localStorage.getItem('jwt_token');
+    if (!token) {
+        console.warn('⚠️ No hay token JWT - redirigiendo a login');
+        window.location.href = '/login.html';
+        return;
+    }
+
+    configurarLogout();
+
+    // Botón CREAR presupuesto
+    const addBtn = document.getElementById('addBudgetBtn');
+    if (addBtn) {
+        addBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            console.log('➕ Abriendo modal de creación');
+            abrirModalPresupuesto();
+        });
+    }
+
+    aplicarFiltroCliente();
+
+    // Cargar datos
+    await Promise.all([
+        cargarClientes(),
+        cargarPresupuestos()
+    ]);
+
+    console.log('✅ Sistema cargado completamente');
 });
