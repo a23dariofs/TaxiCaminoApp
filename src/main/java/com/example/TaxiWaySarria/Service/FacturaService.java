@@ -88,6 +88,11 @@ public class FacturaService {
             factura.setConcepto(facturaActualizada.getConcepto());
         }
 
+        // ✅ AÑADIR: Actualizar tipoServicio
+        if (facturaActualizada.getTipoServicio() != null) {
+            factura.setTipoServicio(facturaActualizada.getTipoServicio());
+        }
+
         // ✅ ACTUALIZAR AGENCIA
         if (facturaActualizada.getAgenciaId() != null) {
             Agencia agencia = agenciaRepository.findById(facturaActualizada.getAgenciaId())
@@ -108,7 +113,7 @@ public class FacturaService {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // GENERAR FACTURA PDF POR AGENCIA
+    // GENERAR FACTURA PDF POR AGENCIA (Método antiguo - mantener por compatibilidad)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /**
@@ -332,21 +337,14 @@ public class FacturaService {
         return baos.toByteArray();
     }
 
-    private void addTotalRow(PdfPTable tabla, String concepto, String valor, Font font, BaseColor bgColor) {
-        PdfPCell celdaConcepto = new PdfPCell(new Phrase(concepto, font));
-        celdaConcepto.setBackgroundColor(bgColor);
-        celdaConcepto.setPadding(5);
-        celdaConcepto.setBorder(Rectangle.BOX);
-        tabla.addCell(celdaConcepto);
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ✅ NUEVO: GENERAR FACTURA PDF CON IVA DINÁMICO (10% o 21%)
+    // ═══════════════════════════════════════════════════════════════════════════
 
-        PdfPCell celdaValor = new PdfPCell(new Phrase(valor, font));
-        celdaValor.setBackgroundColor(bgColor);
-        celdaValor.setPadding(5);
-        celdaValor.setHorizontalAlignment(Element.ALIGN_RIGHT);
-        celdaValor.setBorder(Rectangle.BOX);
-        tabla.addCell(celdaValor);
-    }
-
+    /**
+     * Genera una factura PDF consolidada para una agencia con IVA dinámico
+     * según el tipo de servicio (Viaje Taxi = 10%, Viaje mochilas = 21%)
+     */
     public byte[] generarFacturaAgenciaPDF(Map<String, Object> facturaData) throws Exception {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         Document document = new Document(PageSize.A4, 40, 40, 40, 40);
@@ -367,6 +365,7 @@ public class FacturaService {
         String fechaEmision = (String) facturaData.get("fechaEmision");
         String fechaInicio = (String) facturaData.get("fechaInicio");
         String fechaFin = (String) facturaData.get("fechaFin");
+        String tipoServicio = (String) facturaData.get("tipoServicio"); // ✅ NUEVO
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> pagos = (List<Map<String, Object>>) facturaData.get("pagos");
@@ -374,6 +373,10 @@ public class FacturaService {
         String subtotalStr = (String) facturaData.get("subtotal");
         String ivaStr = (String) facturaData.get("iva");
         String totalStr = (String) facturaData.get("total");
+
+        // ✅ NUEVO: Obtener porcentaje de IVA (10 o 21)
+        Object porcentajeIVAObj = facturaData.get("porcentajeIVA");
+        double porcentajeIVA = porcentajeIVAObj != null ? ((Number) porcentajeIVAObj).doubleValue() : 21.0;
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
         LocalDate fechaEmisionDate = LocalDate.parse(fechaEmision);
@@ -394,11 +397,11 @@ public class FacturaService {
         // Columna izquierda: Datos del cliente (agencia)
         PdfPCell celdaIzq = new PdfPCell();
         celdaIzq.setBorder(Rectangle.NO_BORDER);
-        celdaIzq.addElement(new Paragraph("*NOMBRE Y APELLIDOS*", fontSmall));
+        celdaIzq.addElement(new Paragraph("CLIENTE", fontSmall));
         celdaIzq.addElement(new Paragraph(agencia.get("nombre"), fontBold));
-        celdaIzq.addElement(new Paragraph("*CIF/NIF*", fontSmall));
+        celdaIzq.addElement(new Paragraph("CIF/NIF", fontSmall));
         celdaIzq.addElement(new Paragraph(agencia.get("cif"), fontNormal));
-        celdaIzq.addElement(new Paragraph("*DIRECCIÓN*", fontSmall));
+        celdaIzq.addElement(new Paragraph("DIRECCIÓN", fontSmall));
         celdaIzq.addElement(new Paragraph(agencia.get("direccion"), fontNormal));
         celdaIzq.addElement(new Paragraph("TELÉFONO:", fontSmall));
         celdaIzq.addElement(new Paragraph(agencia.get("telefono"), fontNormal));
@@ -413,6 +416,8 @@ public class FacturaService {
         celdaDer.addElement(new Paragraph("FECHA: " + fechaEmisionDate.format(formatter), fontNormal));
         celdaDer.addElement(new Paragraph("Nº FACTURA: " + numeroFactura, fontBold));
         celdaDer.addElement(new Paragraph("PERIODO: " + fechaInicio + " / " + fechaFin, fontSmall));
+        // ✅ AÑADIR: Tipo de servicio
+        celdaDer.addElement(new Paragraph("TIPO: " + tipoServicio + " (IVA " + String.format("%.0f", porcentajeIVA) + "%)", fontSmall));
         tablaInfo.addCell(celdaDer);
 
         document.add(tablaInfo);
@@ -537,7 +542,8 @@ public class FacturaService {
         tablaTotales.setWidths(new float[]{1, 1});
 
         addTotalRow(tablaTotales, "SUBTOTAL", subtotalStr + " €", fontNormal, new BaseColor(144, 238, 144));
-        addTotalRow(tablaTotales, "IVA (21%)", ivaStr + " €", fontNormal, new BaseColor(173, 216, 230));
+        // ✅ Mostrar IVA con el porcentaje correcto (10% o 21%)
+        addTotalRow(tablaTotales, "IVA (" + String.format("%.0f", porcentajeIVA) + "%)", ivaStr + " €", fontNormal, new BaseColor(173, 216, 230));
         addTotalRow(tablaTotales, "TOTAL", totalStr + " €", fontBold, new BaseColor(144, 238, 144));
 
         celdaTotales.addElement(tablaTotales);
@@ -558,5 +564,20 @@ public class FacturaService {
 
         document.close();
         return baos.toByteArray();
+    }
+
+    private void addTotalRow(PdfPTable tabla, String concepto, String valor, Font font, BaseColor bgColor) {
+        PdfPCell celdaConcepto = new PdfPCell(new Phrase(concepto, font));
+        celdaConcepto.setBackgroundColor(bgColor);
+        celdaConcepto.setPadding(5);
+        celdaConcepto.setBorder(Rectangle.BOX);
+        tabla.addCell(celdaConcepto);
+
+        PdfPCell celdaValor = new PdfPCell(new Phrase(valor, font));
+        celdaValor.setBackgroundColor(bgColor);
+        celdaValor.setPadding(5);
+        celdaValor.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        celdaValor.setBorder(Rectangle.BOX);
+        tabla.addCell(celdaValor);
     }
 }

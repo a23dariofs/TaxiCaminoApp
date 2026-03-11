@@ -20,6 +20,7 @@ public class Factura {
     private String estado;        // PENDIENTE, PAGADO, FALLIDO
     private String metodoPago;    // Tarjeta, Efectivo, Transferencia, Bizum
     private String concepto;
+    private String tipoServicio;  // ✅ AÑADIDO: Viaje mochilas, Viaje Taxi
 
     @ManyToOne
     @JoinColumn(name = "cliente_id")
@@ -111,6 +112,15 @@ public class Factura {
 
     public void setConcepto(String concepto) {
         this.concepto = concepto;
+    }
+
+    // ✅ NUEVOS: Getters y Setters para tipoServicio
+    public String getTipoServicio() {
+        return tipoServicio;
+    }
+
+    public void setTipoServicio(String tipoServicio) {
+        this.tipoServicio = tipoServicio;
     }
 
     public Cliente getCliente() {

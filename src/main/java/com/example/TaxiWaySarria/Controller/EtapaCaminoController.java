@@ -5,6 +5,14 @@ import com.example.TaxiWaySarria.Model.EtapaCamino;
 import com.example.TaxiWaySarria.Repository.EtapaCaminoRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import com.example.TaxiWaySarria.DTOs.ExportarExcelRequest;
+import com.example.TaxiWaySarria.DTOs.EtapaExcelDTO;
+import com.example.TaxiWaySarria.Service.ExcelService;
+import java.io.IOException;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -16,9 +24,15 @@ import java.util.stream.Collectors;
 public class EtapaCaminoController {
 
     private final EtapaCaminoRepository etapaCaminoRepository;
+    private final ExcelService excelService;  // ← AÑADIDO
 
-    public EtapaCaminoController(EtapaCaminoRepository etapaCaminoRepository) {
+    // ✅ CONSTRUCTOR ACTUALIZADO
+    public EtapaCaminoController(
+            EtapaCaminoRepository etapaCaminoRepository,
+            ExcelService excelService  // ← AÑADIDO
+    ) {
         this.etapaCaminoRepository = etapaCaminoRepository;
+        this.excelService = excelService;  // ← AÑADIDO
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -145,5 +159,38 @@ public class EtapaCaminoController {
             e.printStackTrace();
             return ResponseEntity.status(500).build();
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ✅ NUEVO ENDPOINT: EXPORTAR A EXCEL
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @PostMapping("/exportar-excel")
+    public ResponseEntity<Resource> exportarAExcel(
+            @RequestBody ExportarExcelRequest request) throws IOException {
+
+        System.out.println("📊 Exportando Excel para fecha: " + request.getFecha());
+        System.out.println("📦 Número de etapas: " + request.getEtapas().size());
+
+        String fecha = request.getFecha();
+        List<EtapaExcelDTO> etapas = request.getEtapas();
+
+        // Generar Excel usando el servicio
+        byte[] excelBytes = excelService.generarExcelRutaDiaria(fecha, etapas);
+
+        // Preparar respuesta
+        ByteArrayResource resource = new ByteArrayResource(excelBytes);
+
+        String filename = String.format("Ruta_Diaria_%s.xlsx",
+                fecha.replace("/", "-"));
+
+        System.out.println("✅ Excel generado: " + filename + " (" + excelBytes.length + " bytes)");
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + filename + "\"")
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .contentLength(excelBytes.length)
+                .body(resource);
     }
 }

@@ -110,6 +110,12 @@ function inicializarFiltroFecha() {
         cargarEtapasDelDia();
     });
     if (btnManana) btnManana.addEventListener('click', () => cambiarFecha(1));
+
+    // ✅ BOTÓN EXPORTAR EXCEL
+    const btnExportar = document.getElementById('btn-exportar-excel');
+    if (btnExportar) {
+        btnExportar.addEventListener('click', exportarAExcel);
+    }
 }
 
 function cambiarFecha(dias) {
@@ -155,6 +161,56 @@ function actualizarDisplayFecha() {
     fechaDisplay.textContent = textoFecha;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ EXPORTAR A EXCEL
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function exportarAExcel() {
+    if (etapasCache.length === 0) {
+        mostrarToast('No hay etapas para exportar', 'error');
+        return;
+    }
+
+    mostrarToast('Generando Excel...', 'info');
+
+    try {
+        const fechaStr = formatearFechaMostrar(fechaSeleccionada);
+
+        // Enviar datos al endpoint de backend para generar Excel
+        const response = await fetch('/api/etapas/exportar-excel', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`
+            },
+            body: JSON.stringify({
+                fecha: fechaStr,
+                etapas: etapasCache
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Error al generar el Excel');
+        }
+
+        // Descargar el archivo
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Ruta_Diaria_${fechaStr.replace(/\//g, '-')}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        mostrarToast('Excel generado correctamente', 'success');
+    } catch (err) {
+        console.error('Error exportando a Excel:', err);
+        mostrarToast('Error al generar el Excel: ' + err.message, 'error');
+    }
+}
+
 // ─── Cargar etapas del día seleccionado ─────────────────────────────────────
 async function cargarEtapasDelDia() {
     try {
@@ -163,17 +219,6 @@ async function cargarEtapasDelDia() {
         etapasCache = await apiCall(`${API.etapas}/fecha/${fechaStr}`);
 
         console.log('📦 Etapas recibidas del backend:', etapasCache);
-
-        // Debug: Ver primera etapa en detalle
-        if (etapasCache.length > 0) {
-            console.log('🔍 Primera etapa en detalle:', {
-                id: etapasCache[0].id,
-                reserva: etapasCache[0].reserva,
-                cliente: etapasCache[0].reserva?.cliente,
-                agencia: etapasCache[0].reserva?.agencia,
-                empresa: etapasCache[0].reserva?.empresa
-            });
-        }
 
         paginaActual = 1;
         renderTabla();
@@ -213,7 +258,6 @@ function renderTabla() {
         tr.className = 'hover:bg-gray-50/50 transition-colors';
         tr.dataset.etapaId = etapa.id;
 
-        // ✅ Ahora los datos vienen directamente en el DTO plano
         const origen = etapa.origenNombre || 'No especificado';
         const origenCiudad = etapa.origenCiudad || '';
 
@@ -232,7 +276,6 @@ function renderTabla() {
         const empresa = etapa.empresaNombre || '-';
         const observaciones = etapa.comentarios || etapa.observaciones || '-';
 
-        // Estado de la etapa
         const estado = etapa.estado || 'Pendiente';
         const estadoClase = estado === 'Completada' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-orange-50 text-orange-700 border-orange-200';
         const estadoIcono = estado === 'Completada' ? 'check_circle' : 'schedule';

@@ -41,15 +41,19 @@
 
     <!-- Main Content -->
     <main class="flex-1 px-10 py-8 max-w-7xl mx-auto w-full">
-        <!-- Page Header -->
+        <!-- ✅ Page Header CON BOTÓN EXPORTAR -->
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
             <div>
                 <h2 class="text-3xl font-extrabold text-gray-900 tracking-tight">Ruta Diaria</h2>
                 <p class="text-gray-500 mt-1">Visualiza todas las etapas programadas para cada día.</p>
             </div>
+            <button id="btn-exportar-excel" class="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 transition-all shadow-sm">
+                <span class="material-symbols-outlined text-lg">download</span>
+                <span>Exportar a Excel</span>
+            </button>
         </div>
 
-        <!-- ✅ FILTRO DE FECHA -->
+        <!-- FILTRO DE FECHA -->
         <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm mb-8">
             <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div class="flex items-center gap-3">

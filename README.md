@@ -287,3 +287,13 @@ meter nombre e que se garde para outras veces na base de datos.
 no tema dos taxis pode ser que se transpase o servicio a outro
 
 buscar por conductor para ver os viaxes que se lle dan (ver si esta pagado ou no)
+
+
+Cosas a terminar:
+
+- Quitar los nulls de las reservas.
+- Arreglar presupuestos y cambiar correos poner banco etc 
+- Cambiar las etiquetas
+- Cambiar algo facturas
+- Añadir boton para sacar en un excel as reservas diarias
+- Quitar cosas inutiles pagos

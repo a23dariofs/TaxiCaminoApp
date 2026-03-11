@@ -14,6 +14,17 @@ tailwind.config = {
 // ============================================
 
 // ============================================
+// ESTADO DE LA APLICACIÓN
+// ============================================
+let clientesActuales = [];
+let clientesFiltrados = [];
+let clienteEditando = null;
+
+// ✅ PAGINACIÓN
+const ITEMS_POR_PAGINA = 10;
+let paginaActual = 1;
+
+// ============================================
 // VERIFICAR AUTENTICACIÓN AL CARGAR
 // ============================================
 document.addEventListener('DOMContentLoaded', async () => {
@@ -124,75 +135,6 @@ const ClienteService = {
 };
 
 // ============================================
-// SERVICIOS API - ALBERGUES (CON JWT)
-// ============================================
-const AlbergueService = {
-    async listarTodos() {
-        try {
-            const response = await AuthService.authenticatedFetch(`${API_BASE_URL}/albergues`, {
-                method: 'GET'
-            });
-
-            if (!response.ok) throw new Error('Error al obtener albergues');
-            return await response.json();
-        } catch (error) {
-            console.error('Error en listarTodos:', error);
-            throw error;
-        }
-    },
-
-    async buscarPorId(id) {
-        try {
-            const response = await AuthService.authenticatedFetch(`${API_BASE_URL}/albergues/${id}`, {
-                method: 'GET'
-            });
-
-            if (!response.ok) throw new Error('Error al obtener el albergue');
-            return await response.json();
-        } catch (error) {
-            console.error('Error en buscarPorId:', error);
-            throw error;
-        }
-    },
-
-    async buscarPorCiudad(ciudad) {
-        try {
-            const response = await AuthService.authenticatedFetch(
-                `${API_BASE_URL}/albergues/ciudad/${encodeURIComponent(ciudad)}`,
-                { method: 'GET' }
-            );
-
-            if (!response.ok) throw new Error('Error al buscar por ciudad');
-            return await response.json();
-        } catch (error) {
-            console.error('Error en buscarPorCiudad:', error);
-            throw error;
-        }
-    },
-
-    async buscarPorProvincia(provincia) {
-        try {
-            const response = await AuthService.authenticatedFetch(
-                `${API_BASE_URL}/albergues/provincia/${encodeURIComponent(provincia)}`,
-                { method: 'GET' }
-            );
-
-            if (!response.ok) throw new Error('Error al buscar por provincia');
-            return await response.json();
-        } catch (error) {
-            console.error('Error en buscarPorProvincia:', error);
-            throw error;
-        }
-    }
-};
-
-// ============================================
-// ESTADO DE LA APLICACIÓN
-// ============================================
-let clientesActuales = [];
-let clienteEditando = null;
-
-// ============================================
 // INICIALIZACIÓN
 // ============================================
 async function inicializarApp() {
@@ -289,8 +231,12 @@ async function cargarClientes() {
         mostrarCargandoTabla();
         const clientes = await ClienteService.listarTodos();
         clientesActuales = clientes;
-        console.log('Clientes cargados:', clientes);
-        renderizarClientes(clientes);
+        clientesFiltrados = clientes;
+        console.log('Clientes cargados:', clientes.length);
+
+        paginaActual = 1;
+        renderizarClientes();
+        renderizarPaginacion();
     } catch (error) {
         console.error('Error al cargar clientes:', error);
         mostrarErrorTabla('No se pudieron cargar los clientes. Intenta nuevamente.');
@@ -300,7 +246,7 @@ async function cargarClientes() {
 // ============================================
 // RENDERIZADO DE CLIENTES EN LA TABLA
 // ============================================
-function renderizarClientes(clientes) {
+function renderizarClientes() {
     const tbody = document.getElementById('clientsTableBody');
 
     if (!tbody) {
@@ -308,7 +254,7 @@ function renderizarClientes(clientes) {
         return;
     }
 
-    if (clientes.length === 0) {
+    if (clientesFiltrados.length === 0) {
         tbody.innerHTML = `
             <tr>
                 <td colspan="5" class="px-6 py-12 text-center">
@@ -325,7 +271,12 @@ function renderizarClientes(clientes) {
         return;
     }
 
-    tbody.innerHTML = clientes.map(cliente => {
+    // ✅ PAGINACIÓN: Calcular índices
+    const inicio = (paginaActual - 1) * ITEMS_POR_PAGINA;
+    const fin = inicio + ITEMS_POR_PAGINA;
+    const clientesPagina = clientesFiltrados.slice(inicio, fin);
+
+    tbody.innerHTML = clientesPagina.map(cliente => {
         const nombre = cliente.nombre || 'Sin nombre';
         const apellidos = cliente.apellidos || '';
         const nombreCompleto = `${nombre} ${apellidos}`.trim();
@@ -338,7 +289,7 @@ function renderizarClientes(clientes) {
                 <td class="px-6 py-5 whitespace-nowrap text-sm font-medium text-gray-900">${nombreCompleto}</td>
                 <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${telefono}</td>
                 <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${email}</td>
-                <td class="px-6 py-5 text-sm text-gray-600">${notas}</td>
+                <td class="px-6 py-5 text-sm text-gray-600 max-w-xs truncate">${notas}</td>
                 <td class="px-6 py-5 whitespace-nowrap">
                     <div class="flex items-center gap-4">
                         <button
@@ -361,29 +312,131 @@ function renderizarClientes(clientes) {
 }
 
 // ============================================
+// ✅ PAGINACIÓN
+// ============================================
+function renderizarPaginacion() {
+    const totalPaginas = Math.ceil(clientesFiltrados.length / ITEMS_POR_PAGINA);
+
+    // Buscar el contenedor de paginación en el HTML
+    const paginacionContainer = document.querySelector('.px-6.py-4.bg-white.flex.items-center.justify-center');
+
+    if (!paginacionContainer) {
+        console.warn('No se encontró el contenedor de paginación');
+        return;
+    }
+
+    if (totalPaginas <= 1) {
+        paginacionContainer.innerHTML = '';
+        return;
+    }
+
+    let botonesPaginacion = `
+        <div class="flex items-center gap-1">
+            <button
+                onclick="cambiarPagina(${paginaActual - 1})"
+                ${paginaActual === 1 ? 'disabled' : ''}
+                class="flex items-center justify-center h-8 w-8 rounded text-gray-400 hover:bg-gray-50 transition-colors ${paginaActual === 1 ? 'opacity-50 cursor-not-allowed' : ''}">
+                <span class="material-symbols-outlined text-xl">chevron_left</span>
+            </button>
+    `;
+
+    // Lógica de paginación inteligente
+    const rango = 2; // Mostrar 2 páginas antes y después de la actual
+    let inicioPaginas = Math.max(1, paginaActual - rango);
+    let finPaginas = Math.min(totalPaginas, paginaActual + rango);
+
+    // Siempre mostrar primera página
+    if (inicioPaginas > 1) {
+        botonesPaginacion += `
+            <button
+                onclick="cambiarPagina(1)"
+                class="flex items-center justify-center h-8 w-8 rounded ${paginaActual === 1 ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'} text-sm font-medium transition-colors">
+                1
+            </button>
+        `;
+        if (inicioPaginas > 2) {
+            botonesPaginacion += `<span class="flex items-center justify-center h-8 w-8 text-gray-600">...</span>`;
+        }
+    }
+
+    // Páginas del rango
+    for (let i = inicioPaginas; i <= finPaginas; i++) {
+        botonesPaginacion += `
+            <button
+                onclick="cambiarPagina(${i})"
+                class="flex items-center justify-center h-8 w-8 rounded ${paginaActual === i ? 'bg-primary text-white font-bold' : 'text-gray-600 hover:bg-gray-50 font-medium'} text-sm transition-colors">
+                ${i}
+            </button>
+        `;
+    }
+
+    // Siempre mostrar última página
+    if (finPaginas < totalPaginas) {
+        if (finPaginas < totalPaginas - 1) {
+            botonesPaginacion += `<span class="flex items-center justify-center h-8 w-8 text-gray-600">...</span>`;
+        }
+        botonesPaginacion += `
+            <button
+                onclick="cambiarPagina(${totalPaginas})"
+                class="flex items-center justify-center h-8 w-8 rounded ${paginaActual === totalPaginas ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-50'} text-sm font-medium transition-colors">
+                ${totalPaginas}
+            </button>
+        `;
+    }
+
+    botonesPaginacion += `
+            <button
+                onclick="cambiarPagina(${paginaActual + 1})"
+                ${paginaActual === totalPaginas ? 'disabled' : ''}
+                class="flex items-center justify-center h-8 w-8 rounded text-gray-400 hover:bg-gray-50 transition-colors ${paginaActual === totalPaginas ? 'opacity-50 cursor-not-allowed' : ''}">
+                <span class="material-symbols-outlined text-xl">chevron_right</span>
+            </button>
+        </div>
+    `;
+
+    paginacionContainer.innerHTML = botonesPaginacion;
+}
+
+function cambiarPagina(numeroPagina) {
+    const totalPaginas = Math.ceil(clientesFiltrados.length / ITEMS_POR_PAGINA);
+
+    if (numeroPagina < 1 || numeroPagina > totalPaginas) {
+        return;
+    }
+
+    paginaActual = numeroPagina;
+    renderizarClientes();
+    renderizarPaginacion();
+
+    // Scroll suave a la parte superior de la tabla
+    document.querySelector('.bg-white.rounded-xl.border')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ============================================
 // FUNCIONES DE BÚSQUEDA Y FILTRADO
 // ============================================
 function filtrarClientesLocal(e) {
     const searchTerm = e.target.value.toLowerCase().trim();
 
     if (searchTerm === '') {
-        renderizarClientes(clientesActuales);
-        return;
+        clientesFiltrados = clientesActuales;
+    } else {
+        clientesFiltrados = clientesActuales.filter(cliente => {
+            const nombre = `${cliente.nombre || ''} ${cliente.apellidos || ''}`.toLowerCase();
+            const telefono = (cliente.telefono || '').toLowerCase();
+            const email = (cliente.email || '').toLowerCase();
+            const notas = (cliente.notas || cliente.observaciones || '').toLowerCase();
+
+            return nombre.includes(searchTerm) ||
+                   telefono.includes(searchTerm) ||
+                   email.includes(searchTerm) ||
+                   notas.includes(searchTerm);
+        });
     }
 
-    const clientesFiltrados = clientesActuales.filter(cliente => {
-        const nombre = `${cliente.nombre || ''} ${cliente.apellidos || ''}`.toLowerCase();
-        const telefono = (cliente.telefono || '').toLowerCase();
-        const email = (cliente.email || '').toLowerCase();
-        const notas = (cliente.notas || cliente.observaciones || '').toLowerCase();
-
-        return nombre.includes(searchTerm) ||
-               telefono.includes(searchTerm) ||
-               email.includes(searchTerm) ||
-               notas.includes(searchTerm);
-    });
-
-    renderizarClientes(clientesFiltrados);
+    paginaActual = 1; // Resetear a página 1 cuando se filtra
+    renderizarClientes();
+    renderizarPaginacion();
 }
 
 // ============================================
@@ -743,9 +796,10 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-// Exponer funciones globalmente para que puedan ser llamadas desde el HTML
+// ✅ Exponer funciones globalmente para que puedan ser llamadas desde el HTML
 window.editarCliente = editarCliente;
 window.eliminarCliente = eliminarCliente;
 window.abrirModalCrearCliente = abrirModalCrearCliente;
 window.cerrarModal = cerrarModal;
 window.cargarClientes = cargarClientes;
+window.cambiarPagina = cambiarPagina;

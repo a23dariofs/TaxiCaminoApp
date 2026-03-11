@@ -47,6 +47,7 @@ let filtroAgenciaActivo = false;  // ✅ AÑADIDO
 let agenciaSeleccionada = null;  // ✅ AÑADIDO: Para generar PDF
 let fechaInicio = null;  // ✅ AÑADIDO: Para generar PDF
 let fechaFin = null;  // ✅ AÑADIDO: Para generar PDF
+let tipoServicioSeleccionado = null;  // ✅ AÑADIDO: Para calcular IVA correcto
 
 // ─── Paginación ──────────────────────────────────────────────────────────────
 const ITEMS_POR_PAGINA = 4;
@@ -220,6 +221,13 @@ async function abrirModalFiltroAgencia() {
                         ${agenciaOpciones}
                     </select>
                 </div>
+                <div>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Tipo de Servicio *</label>
+                    <select id="filtro-tipo-servicio" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
+                        <option value="Viaje Taxi">Viaje Taxi (IVA 10%)</option>
+                        <option value="Viaje mochilas">Viaje mochilas (IVA 21%)</option>
+                    </select>
+                </div>
                 <div style="display:flex;gap:16px;">
                     <div style="flex:1;">
                         <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Fecha Inicio *</label>
@@ -256,24 +264,29 @@ async function abrirModalFiltroAgencia() {
 
 async function aplicarFiltroAgencia() {
     const agenciaId = document.getElementById('filtro-agencia')?.value;
+    const tipoServicio = document.getElementById('filtro-tipo-servicio')?.value;
     const fechaInicioInput = document.getElementById('filtro-fecha-inicio')?.value;
     const fechaFinInput = document.getElementById('filtro-fecha-fin')?.value;
 
-    if (!agenciaId || !fechaInicioInput || !fechaFinInput) {
+    if (!agenciaId || !tipoServicio || !fechaInicioInput || !fechaFinInput) {
         mostrarToast('Por favor completa todos los campos.', 'error');
         return;
     }
 
     agenciaSeleccionada = modalAgencias.find(a => a.id == agenciaId);
+    tipoServicioSeleccionado = tipoServicio;
     fechaInicio = new Date(fechaInicioInput);
     fechaFin = new Date(fechaFinInput);
     fechaFin.setHours(23, 59, 59, 999);
 
     try {
-        // Filtrar facturas directamente por agencia y fechas
+        // Filtrar facturas por agencia, tipo de servicio y fechas
         facturasCache = facturasCacheFull.filter(f => {
             // Filtrar por agencia
             if (!f.agencia || f.agencia.id != agenciaId) return false;
+
+            // Filtrar por tipo de servicio
+            if (f.tipoServicio !== tipoServicio) return false;
 
             // Filtrar por fecha
             const fechaFactura = new Date(f.fechaEmision);
@@ -283,7 +296,7 @@ async function aplicarFiltroAgencia() {
         });
 
         if (facturasCache.length === 0) {
-            mostrarToast(`No se encontraron pagos de ${agenciaSeleccionada.nombre} entre ${fechaInicioInput} y ${fechaFinInput}`, 'info');
+            mostrarToast(`No se encontraron pagos de tipo "${tipoServicio}" para ${agenciaSeleccionada.nombre} entre ${fechaInicioInput} y ${fechaFinInput}`, 'info');
             document.querySelector('.modal-overlay')?.remove();
             return;
         }
@@ -295,10 +308,10 @@ async function aplicarFiltroAgencia() {
         renderTabla();
         renderPaginacion();
 
-        mostrarToast(`Mostrando ${facturasCache.length} pagos de ${agenciaSeleccionada.nombre}`, 'success');
+        mostrarToast(`Mostrando ${facturasCache.length} pagos de tipo "${tipoServicio}" de ${agenciaSeleccionada.nombre}`, 'success');
 
         // Mostrar badge de filtro activo
-        mostrarBadgeFiltroActivo(agenciaSeleccionada.nombre, fechaInicioInput, fechaFinInput);
+        mostrarBadgeFiltroActivo(agenciaSeleccionada.nombre, tipoServicio, fechaInicioInput, fechaFinInput);
 
     } catch (err) {
         console.error('Error aplicando filtro:', err);
@@ -310,6 +323,7 @@ function limpiarFiltroAgencia() {
     facturasCache = [...facturasCacheFull];
     filtroAgenciaActivo = false;
     agenciaSeleccionada = null;
+    tipoServicioSeleccionado = null;
     fechaInicio = null;
     fechaFin = null;
 
@@ -323,6 +337,9 @@ function limpiarFiltroAgencia() {
     mostrarToast('Filtros eliminados', 'success');
 }
 
+// ✅ Exponer función globalmente para onclick
+window.limpiarFiltroAgencia = limpiarFiltroAgencia;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // ✅ NUEVO: GENERAR FACTURA PDF PARA AGENCIA
 // ═══════════════════════════════════════════════════════════════════════════
@@ -332,12 +349,20 @@ async function generarFacturaPDFAgencia() {
         return;
     }
 
+    if (!tipoServicioSeleccionado) {
+        mostrarToast('Falta el tipo de servicio para generar la factura', 'error');
+        return;
+    }
+
     mostrarToast('Generando factura PDF...', 'info');
 
     try {
-        // Calcular totales
+        // Calcular totales con IVA según tipo de servicio
         const subtotal = facturasCache.reduce((sum, f) => sum + (f.total || f.importeTotal || 0), 0);
-        const iva = subtotal * 0.21; // IVA del 21%
+
+        // ✅ IVA según tipo de servicio
+        const porcentajeIVA = tipoServicioSeleccionado === 'Viaje Taxi' ? 0.10 : 0.21;
+        const iva = subtotal * porcentajeIVA;
         const total = subtotal + iva;
 
         // Preparar datos para el PDF
@@ -349,6 +374,8 @@ async function generarFacturaPDFAgencia() {
                 telefono: agenciaSeleccionada.telefono || '',
                 email: agenciaSeleccionada.email || ''
             },
+            tipoServicio: tipoServicioSeleccionado,
+            porcentajeIVA: porcentajeIVA * 100, // Para mostrar en PDF (10 o 21)
             fechaInicio: fechaInicio.toISOString().split('T')[0],
             fechaFin: fechaFin.toISOString().split('T')[0],
             fechaEmision: new Date().toISOString().split('T')[0],
@@ -384,14 +411,15 @@ async function generarFacturaPDFAgencia() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const nombreArchivo = `Factura_${agenciaSeleccionada.nombre.replace(/\s+/g, '_')}_${formatFecha(fechaInicio)}_${formatFecha(fechaFin)}.pdf`;
+        const ivaLabel = porcentajeIVA === 0.10 ? 'IVA10' : 'IVA21';
+        const nombreArchivo = `Factura_${agenciaSeleccionada.nombre.replace(/\s+/g, '_')}_${tipoServicioSeleccionado.replace(/\s+/g, '_')}_${ivaLabel}_${formatFecha(fechaInicio)}_${formatFecha(fechaFin)}.pdf`;
         a.download = nombreArchivo;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
 
-        mostrarToast('Factura generada correctamente', 'success');
+        mostrarToast(`Factura generada con IVA ${porcentajeIVA * 100}%`, 'success');
 
     } catch (err) {
         console.error('❌ Error generando factura:', err);
@@ -399,8 +427,13 @@ async function generarFacturaPDFAgencia() {
     }
 }
 
-function mostrarBadgeFiltroActivo(agenciaNombre, fechaInicio, fechaFin) {
+// ✅ Exponer función globalmente para onclick
+window.generarFacturaPDFAgencia = generarFacturaPDFAgencia;
+
+function mostrarBadgeFiltroActivo(agenciaNombre, tipoServicio, fechaInicio, fechaFin) {
     document.getElementById('filtro-badge')?.remove();
+
+    const ivaText = tipoServicio === 'Viaje Taxi' ? 'IVA 10%' : 'IVA 21%';
 
     const badge = document.createElement('div');
     badge.id = 'filtro-badge';
@@ -409,7 +442,7 @@ function mostrarBadgeFiltroActivo(agenciaNombre, fechaInicio, fechaFin) {
         <div style="display:flex;align-items:center;gap:8px;">
             <span class="material-symbols-outlined" style="font-size:20px;color:#1d4ed8;">filter_alt</span>
             <span style="font-size:14px;color:#1e40af;">
-                <strong>Filtro activo:</strong> ${agenciaNombre} del ${fechaInicio} al ${fechaFin}
+                <strong>Filtro activo:</strong> ${agenciaNombre} | ${tipoServicio} (${ivaText}) | ${fechaInicio} - ${fechaFin}
             </span>
         </div>
         <div style="display:flex;gap:8px;">
@@ -442,7 +475,7 @@ function renderTabla() {
     if (facturasCache.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="8" style="padding:40px 24px;text-align:center;font-size:14px;color:#9ca3af;">
+                <td colspan="9" style="padding:40px 24px;text-align:center;font-size:14px;color:#9ca3af;">
                     ${filtroAgenciaActivo ? 'No hay pagos que coincidan con el filtro.' : 'No hay pagos registrados.'}
                 </td>
             </tr>`;
@@ -501,10 +534,15 @@ function renderTabla() {
                 </div>`;
         }
 
-        // Columnas: Cliente | Agencia | Concepto | Fecha Pago | Importe | Método | Estado | Acciones
+        // Columnas: Cliente | Agencia | Tipo Servicio | Concepto | Fecha Pago | Importe | Método | Estado | Acciones
         tr.innerHTML = `
             <td class="px-6 py-5 whitespace-nowrap text-sm font-medium text-gray-900">${f.cliente?.nombre || '—'}</td>
             <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${f.agencia?.nombre || '—'}</td>
+            <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">
+                <span class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${f.tipoServicio === 'Viaje mochilas' ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}">
+                    ${f.tipoServicio || 'Viaje Taxi'}
+                </span>
+            </td>
             <td class="px-6 py-5 text-sm text-gray-600">${concepto}</td>
             <td class="px-6 py-5 whitespace-nowrap text-sm text-gray-600">${fechaPago}</td>
             <td class="px-6 py-5 text-right whitespace-nowrap text-sm font-bold text-gray-900">€${f.total?.toFixed(2) || '0.00'}</td>
@@ -690,6 +728,13 @@ function crearModalEditar(factura) {
                     </select>
                 </div>
                 <div>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Tipo de Servicio</label>
+                    <select id="modal-tipo-servicio" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
+                        <option value="Viaje Taxi" ${factura.tipoServicio === 'Viaje Taxi' || !factura.tipoServicio ? 'selected' : ''}>Viaje Taxi</option>
+                        <option value="Viaje mochilas" ${factura.tipoServicio === 'Viaje mochilas' ? 'selected' : ''}>Viaje mochilas</option>
+                    </select>
+                </div>
+                <div>
                     <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Concepto</label>
                     <input type="text" id="modal-concepto" value="${concepto}"
                         style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
@@ -703,7 +748,6 @@ function crearModalEditar(factura) {
                     <div style="flex:1;">
                         <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Método de Pago</label>
                         <select id="modal-metodo" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
-                            <option value="Tarjeta" ${factura.metodoPago === 'Tarjeta' ? 'selected' : ''}>Tarjeta</option>
                             <option value="Efectivo" ${factura.metodoPago === 'Efectivo' ? 'selected' : ''}>Efectivo</option>
                             <option value="Transferencia" ${factura.metodoPago === 'Transferencia' ? 'selected' : ''}>Transferencia</option>
                             <option value="Bizum" ${factura.metodoPago === 'Bizum' ? 'selected' : ''}>Bizum</option>
@@ -746,6 +790,7 @@ async function handleModalEditSubmit() {
     const facturaId = this.dataset.id;
     const clienteId = document.getElementById('modal-cliente')?.value;
     const agenciaId = document.getElementById('modal-agencia')?.value;
+    const tipoServicio = document.getElementById('modal-tipo-servicio')?.value;
     const concepto  = document.getElementById('modal-concepto')?.value.trim();
     const importe   = document.getElementById('modal-importe')?.value;
     const metodo    = document.getElementById('modal-metodo')?.value;
@@ -767,6 +812,7 @@ async function handleModalEditSubmit() {
             estado: estado,
             metodoPago: metodo,
             concepto: concepto,
+            tipoServicio: tipoServicio,
             agenciaId: agenciaId ? parseInt(agenciaId) : null
         };
 
@@ -826,6 +872,13 @@ function crearModal() {
                     </select>
                 </div>
                 <div>
+                    <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Tipo de Servicio *</label>
+                    <select id="modal-tipo-servicio" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
+                        <option value="Viaje Taxi">Viaje Taxi</option>
+                        <option value="Viaje mochilas">Viaje mochilas</option>
+                    </select>
+                </div>
+                <div>
                     <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Concepto *</label>
                     <input type="text" id="modal-concepto" placeholder="Ej. Ruta Aeropuerto - Hotel"
                         style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;box-sizing:border-box;">
@@ -839,7 +892,6 @@ function crearModal() {
                     <div style="flex:1;">
                         <label style="display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Método de Pago</label>
                         <select id="modal-metodo" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;font-size:14px;color:#1f2937;outline:none;background:#fff;">
-                            <option value="Tarjeta">Tarjeta</option>
                             <option value="Efectivo">Efectivo</option>
                             <option value="Transferencia">Transferencia</option>
                             <option value="Bizum">Bizum</option>
@@ -867,6 +919,7 @@ function crearModal() {
 async function handleModalSubmit() {
     const clienteId = document.getElementById('modal-cliente')?.value;
     const agenciaId = document.getElementById('modal-agencia')?.value;
+    const tipoServicio = document.getElementById('modal-tipo-servicio')?.value;
     const concepto  = document.getElementById('modal-concepto')?.value.trim();
     const importe   = document.getElementById('modal-importe')?.value;
     const metodo    = document.getElementById('modal-metodo')?.value;
@@ -884,6 +937,7 @@ async function handleModalSubmit() {
             estado: 'PENDIENTE',
             metodoPago: metodo,
             concepto: concepto,
+            tipoServicio: tipoServicio,
             agenciaId: agenciaId ? parseInt(agenciaId) : null
         };
 
